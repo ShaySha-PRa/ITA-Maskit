@@ -9,6 +9,8 @@
 | 能力 | 说明 |
 |------|------|
 | **8 类内置敏感字段** | 姓名、邮箱、IP（全遮盖 `*.*.*.*`）、手机号、工号、账号、公司名、软件版本号 |
+| **9 种文件格式** | CSV / Excel / JSON / JSONL / 邮件(.eml) / PDF / Word(.docx) |
+| **双引擎架构** | 表格引擎（按列脱敏）+ 文本引擎（全文 PII 扫描） |
 | **两种脱敏策略** | `mask`（部分遮盖，保留可读性）+ `pseudo`（确定性伪名化） |
 | **确定性伪名化** | 同一敏感值在不同文件/批次映射到**同一伪名**（HMAC + pepper），保留跨表关联、审计可追溯 |
 | **数据驱动规则** | YAML 覆盖/新增规则（正则 + 遮盖模板 + 版本号），响应每年变化的合规要求 |
@@ -56,14 +58,40 @@ maskit audit
 
 **演示确定性**：跑两次 `maskit mask`（同一输入、同一 pepper），输出**逐字节一致**——这是「跨文件可关联」的保证。
 
+## 支持的文件格式
+
+| 格式 | 扩展名 | 引擎 | 输出 |
+|------|--------|------|------|
+| CSV | `.csv` | 表格（按列） | CSV |
+| Excel | `.xlsx` / `.xls` | 表格（按列） | Excel |
+| JSON / JSONL | `.json` / `.jsonl` / `.ndjson` | 表格（按列） | JSONL |
+| 邮件 | `.eml` | 文本（全文扫描） | 脱敏 .eml |
+| PDF | `.pdf` | 文本（全文扫描） | 脱敏 PDF |
+| Word | `.docx` | 文本（全文扫描） | 脱敏 .docx |
+
+**表格格式**（CSV/Excel/JSON）按「列」脱敏，规则由 YAML 列映射决定，保留原始 schema 与行序。
+
+**文本格式**（邮件/PDF/Word）没有列，在**全文**中扫描 PII（邮箱/IP/手机号/工号/版本号等有精确正则的字段）并替换，输出保持同格式的脱敏副本（可作审计证据）。
+
+```bash
+# 表格格式：按列脱敏（规则由 YAML 决定，支持 pseudo）
+maskit mask data.xlsx --rules rules.yaml --pepper <密钥> -o out.xlsx
+
+# 文本格式：全文扫描（--strategy 指定 mask 或 pseudo）
+maskit mask mail.eml --strategy mask -o mail_masked.eml
+maskit mask report.pdf --strategy pseudo --pepper <密钥> -o report_masked.pdf
+```
+
 ## 命令
 
 | 命令 | 说明 |
 |------|------|
-| `maskit mask <in.csv> [--rules r.yaml] [--pepper KEY] [-o out.csv]` | 脱敏 CSV（缺省用内置默认规则集，全部 mask） |
+| `maskit mask <in> [--rules r.yaml] [--pepper KEY] [--strategy mask\|pseudo] [-o out]` | 脱敏任意支持格式 |
 | `maskit demo [--rows N] [--seed N]` | 生成确定性演示数据 |
 | `maskit rules list` | 列出可用规则 |
 | `maskit audit [--limit N]` | 查看审计日志 |
+
+> `--strategy` 仅对文本格式生效；表格格式的策略由各列的 rules.yaml 决定。
 
 ## 规则配置（数据驱动）
 
@@ -96,6 +124,14 @@ rules:
 
 **规则带版本**：每次运行把规则集版本写进审计日志，可追溯。
 
+## 已知局限
+
+- **PDF 是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。如需原样遮盖需 PDF 图层级技术（v3 或独立项目）。
+- **文本格式不扫描 name/company**：`name`/`company` 的匹配正则太宽（`.+`），在全文里无法区分「名字」和「普通文字」，为避免误伤，默认只扫描有精确正则的字段（email/ip/phone/employee_id/app_version/ssn/credit_card）。如需在文本中识别名字，需额外配置。
+- **Excel 只处理第一个 sheet**：多 sheet 循环留到后续版本。
+- **邮件只支持 .eml**：Outlook `.msg` 格式不在 v1/v2 范围。
+- **图片（PNG/JPG）不支持**：需 OCR 定位文字后打码，规划在 v3。
+
 ## 安全边界
 
 - **pepper 是密钥**：pseudo 策略必须提供 `--pepper` 或 `MASKIT_PEPPER` 环境变量，缺失即报错（不静默）。CLI 传参仅用于演示，生产用环境变量（避免 shell 历史/`ps` 泄露）。
@@ -116,7 +152,7 @@ rules:
 
 ```bash
 pip install -e ".[dev]"
-pytest            # 48 个测试，覆盖确定性/边缘/性能
+pytest            # 61 个测试，覆盖确定性/边缘/性能/各格式端到端
 ruff check .      # 代码规范
 ```
 

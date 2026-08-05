@@ -2,8 +2,10 @@
 
 在文本流中扫描「可用于全文扫描」的规则（text_scanable=True，即有精确正则
 的 email/ip/phone/employee_id/app_version/ssn/credit_card），对匹配处替换成
-mask/pseudo 模板。name/company/account 等 match 过宽或无法区分边界的规则
-不参与全文扫描（仅列式可用），避免误伤普通文字。
+mask/pseudo 模板。
+
+name/company（match 过宽无法直接全文扫描）通过可选参数 `scan_names` 启用：
+用语义前缀 + 内置词表识别（见 maskit.rules.name_company），纯本地零网络。
 """
 from __future__ import annotations
 
@@ -35,11 +37,15 @@ def mask_text_pii(
     ruleset: RuleSet,
     pepper: str | None,
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> str:
     """对文本流中的 PII 做 mask/pseudo 替换，返回脱敏后的文本。
 
     - 只扫描 text_scanable 规则
     - strategy="mask"（默认，无需 pepper）或 "pseudo"（确定性，需 pepper）
+    - scan_names=True → 额外用语义前缀 + 词表识别 name/company（纯本地）
+    - person_list：外部全量人员清单（动态词表），识别不易从上下文判断的人名
     - 每个匹配独立替换，匹配处去锚点后编译
     """
     if not text:
@@ -55,15 +61,51 @@ def mask_text_pii(
         for rule in rules
     ]
 
-    # 逐个规则替换，避免规则间互相污染（每次基于原文，记录 span）
-    # 简单方案：按规则顺序 sub，后规则不会重新匹配已替换内容（若替换结果含 PII 模式，
-    # 顺序可导致后规则处理替换结果；用占位符避免。为简化，先按规则顺序 sub）。
+    # 逐个规则替换，避免规则间互相污染
     out = text
     for rule, regex in compiled:
         def _repl(m: re.Match, r=rule) -> str:
             return _apply_single(r, m.group(0), strategy, pepper)
 
         out = regex.sub(_repl, out)
+
+    # 可选：name/company 识别（语义前缀 + 词表 + 外部清单，纯本地）
+    if scan_names:
+        out = _mask_names(out, ruleset, pepper, strategy, person_list)
+
+    return out
+
+
+def _mask_names(
+    text: str,
+    ruleset: RuleSet,
+    pepper: str | None,
+    strategy: str,
+    person_list: set[str] | None = None,
+) -> str:
+    """用语义前缀 + 词表识别 name/company 并替换（纯本地零网络）。"""
+    from maskit.rules.name_company import find_company_names, find_person_names
+
+    name_rule = ruleset.defs.get("name")
+    company_rule = ruleset.defs.get("company")
+    if not name_rule and not company_rule:
+        return text
+
+    out = text
+    # 识别到的人名 → 替换
+    for name in find_person_names(out, person_list):
+        if name_rule:
+            out = out.replace(
+                name,
+                _apply_single(name_rule, name, strategy, pepper),
+            )
+    # 公司名 → 替换
+    for comp in find_company_names(out):
+        if company_rule:
+            out = out.replace(
+                comp,
+                _apply_single(company_rule, comp, strategy, pepper),
+            )
     return out
 
 

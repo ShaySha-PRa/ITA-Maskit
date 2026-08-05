@@ -81,7 +81,23 @@ maskit mask data.xlsx --rules rules.yaml --pepper <密钥> -o out.xlsx
 # 文本格式：全文扫描（--strategy 指定 mask 或 pseudo）
 maskit mask mail.eml --strategy mask -o mail_masked.eml
 maskit mask report.pdf --strategy pseudo --pepper <密钥> -o report_masked.pdf
+
+# 文本格式 + 识别姓名/公司名（--scan-names，语义前缀+词表，纯本地）
+maskit mask mail.eml --scan-names -o mail_masked.eml
+
+# 文本格式 + 全量人员清单（--person-list，动态词表，识别不易判断的人名）
+maskit mask mail.eml --scan-names --person-list people.csv -o mail_masked.eml
 ```
+
+## 姓名/公司名识别（纯本地，零网络）
+
+文本格式默认**不扫描** name/company（它们的匹配正则太宽，`.+` 会误伤普通文字）。需要时用 `--scan-names` 启用，纯本地识别：
+
+- **语义前缀**：`申请人：张伟`、`供应商：亚玛芬体育` → 识别并遮盖
+- **内置词表**：审计常见姓名/公司（张伟、亚玛芬体育、MayAir…）
+- **全量人员清单**（`--person-list people.csv`）：导入公司全量用户/人员清单（含 `name`/`姓名`/`employee_id` 列），清单里**所有人名**全文匹配脱敏——即使正文里没有「申请人：」这类前缀也能识别
+
+**数据安全**：全部本地正则 + 本地 CSV，**无模型、无网络、数据不出机器**。
 
 ## 命令
 
@@ -128,7 +144,7 @@ rules:
 ## 已知局限
 
 - **PDF 是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。如需原样遮盖需 PDF 图层级技术（v3 或独立项目）。
-- **文本格式不扫描 name/company**：`name`/`company` 的匹配正则太宽（`.+`），在全文里无法区分「名字」和「普通文字」，为避免误伤，默认只扫描有精确正则的字段（email/ip/phone/employee_id/app_version/ssn/credit_card）。如需在文本中识别名字，需额外配置。
+- **name/company 默认不扫文本**：匹配正则太宽，默认跳过防误伤；用 `--scan-names` 启用（语义前缀 + 词表 + 可选人员清单，纯本地）。
 - **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。
 - **.msg 输入输出 .eml**：Outlook `.msg` 是私有 OLE 格式，Python 无库能可靠回写，因此脱敏后输出标准 `.eml`（可打开/转发/作证据）。`.msg→.eml` 的 MIME boundary 每次随机，输出**内容确定但非逐字节一致**。
 - **邮件只支持 .eml/.msg**：Outlook 其它私有格式不在范围。

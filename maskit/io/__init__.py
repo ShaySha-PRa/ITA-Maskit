@@ -24,11 +24,14 @@ def mask_file(
     pepper: str | None,
     encoding: str = "utf-8",
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> int:
     """统一脱敏入口：按扩展名分发，返回处理行数/页数/段数。
 
     表格格式（CSV/Excel/JSON）：按列脱敏，strategy 由 ruleset 每列决定。
-    文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定。
+    文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定，
+    scan_names=True 时额外识别姓名/公司名（纯本地，person_list 为外部清单）。
     """
     ext = _ext(input_path)
 
@@ -50,22 +53,22 @@ def mask_file(
     if ext == ".eml":
         from maskit.io.emailio import mask_email_file
 
-        return mask_email_file(input_path, output_path, ruleset, pepper, strategy)
+        return mask_email_file(input_path, output_path, ruleset, pepper, strategy, scan_names, person_list)
 
     if ext == ".msg":
         from maskit.io.msgio import mask_msg_file
 
-        return mask_msg_file(input_path, output_path, ruleset, pepper, strategy)
+        return mask_msg_file(input_path, output_path, ruleset, pepper, strategy, scan_names, person_list)
 
     if ext == ".pdf":
         from maskit.io.pdfio import mask_pdf_file
 
-        return mask_pdf_file(input_path, output_path, ruleset, pepper, strategy)
+        return mask_pdf_file(input_path, output_path, ruleset, pepper, strategy, scan_names, person_list)
 
     if ext == ".docx":
         from maskit.io.docxio import mask_docx_file
 
-        return mask_docx_file(input_path, output_path, ruleset, pepper, strategy)
+        return mask_docx_file(input_path, output_path, ruleset, pepper, strategy, scan_names, person_list)
 
     raise ValueError(
         f"不支持的输入格式: {ext}（支持 csv/xlsx/xls/json/jsonl/ndjson/eml/msg/pdf/docx）"

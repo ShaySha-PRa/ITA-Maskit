@@ -53,6 +53,12 @@ def mask(
     strategy: str = typer.Option(
         "mask", "--strategy", help="文本格式（邮件/PDF/Word）的扫描策略：mask 或 pseudo"
     ),
+    scan_names: bool = typer.Option(
+        False, "--scan-names", help="文本格式额外识别姓名/公司名（语义前缀+词表，纯本地）"
+    ),
+    person_list_file: str | None = typer.Option(
+        None, "--person-list", help="全量人员清单 CSV（含姓名列，动态词表，识别不易判断的人名，纯本地）"
+    ),
     output: str | None = typer.Option(
         None, "--output", "-o", help="输出路径（缺省为 input.masked.<ext>）"
     ),
@@ -80,7 +86,17 @@ def mask(
         out = output or str(in_path.with_suffix(".masked" + in_path.suffix))
         from maskit.io import mask_file
 
-        rows = mask_file(input_path, out, ruleset, resolved_pepper, encoding, strategy)
+        # 可选：加载全量人员清单（动态词表，纯本地）
+        person_list = None
+        if person_list_file:
+            from maskit.rules.name_company import load_person_list
+
+            person_list = load_person_list(person_list_file)
+
+        rows = mask_file(
+            input_path, out, ruleset, resolved_pepper,
+            encoding, strategy, scan_names, person_list,
+        )
 
         # 审计日志
         if is_text:

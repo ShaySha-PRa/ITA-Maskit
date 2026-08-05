@@ -40,7 +40,8 @@ def _mask_email_address(addr: str, ruleset: RuleSet, pepper: str | None, strateg
 
 
 def _mask_header_value(
-    name: str, value: str, ruleset: RuleSet, pepper: str | None, strategy: str
+    name: str, value: str, ruleset: RuleSet, pepper: str | None, strategy: str,
+    scan_names: bool = False, person_list: set[str] | None = None,
 ) -> str:
     """按 header 类型脱敏。"""
     lower = name.lower()
@@ -49,7 +50,7 @@ def _mask_header_value(
         parts = [p.strip() for p in value.split(",")]
         return ", ".join(_mask_email_address(p, ruleset, pepper, strategy) for p in parts if p)
     if lower in _SUBJECT_HEADERS:
-        return mask_text_pii(value, ruleset, pepper, strategy)
+        return mask_text_pii(value, ruleset, pepper, strategy, scan_names, person_list)
     return value  # 其它 header（Date/Message-ID 等）不动
 
 
@@ -58,13 +59,18 @@ def mask_email_message(
     ruleset: RuleSet,
     pepper: str | None,
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> None:
     """就地脱敏一个 email.message（headers + body），供 .eml 和 .msg 复用。"""
     # 脱敏 headers
     for name in list(msg.keys()):
         values = msg.get_all(name)
         if values:
-            masked_values = [_mask_header_value(name, v, ruleset, pepper, strategy) for v in values]
+            masked_values = [
+                _mask_header_value(name, v, ruleset, pepper, strategy, scan_names, person_list)
+                for v in values
+            ]
             del msg[name]
             for v in masked_values:
                 msg[name] = v
@@ -79,7 +85,7 @@ def mask_email_message(
                 text = body.decode(charset, errors="replace")
             except Exception:  # noqa: BLE001, S112 — 单 part 解码失败跳过，不影响整封邮件
                 continue
-            masked = mask_text_pii(text, ruleset, pepper, strategy)
+            masked = mask_text_pii(text, ruleset, pepper, strategy, scan_names, person_list)
             if masked != text:
                 part.set_payload(masked, charset=charset)
 
@@ -90,6 +96,8 @@ def mask_email_file(
     ruleset: RuleSet,
     pepper: str | None,
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 .eml → .eml，返回 1（单封邮件）。
 
@@ -109,7 +117,7 @@ def mask_email_file(
     if msg is None:
         raise ValueError(f"邮件文件无内容: {src}")
 
-    mask_email_message(msg, ruleset, pepper, strategy)
+    mask_email_message(msg, ruleset, pepper, strategy, scan_names, person_list)
 
     dst.write_bytes(msg.as_bytes(policy=policy.default))
     return 1

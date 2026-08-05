@@ -15,7 +15,10 @@ except ImportError:  # pragma: no cover
     docx = None
 
 
-def _mask_runs_paragraph(paragraph, ruleset: RuleSet, pepper: str | None, strategy: str) -> None:
+def _mask_runs_paragraph(
+    paragraph, ruleset: RuleSet, pepper: str | None, strategy: str,
+    scan_names: bool = False, person_list: set[str] | None = None,
+) -> None:
     """脱敏一个段落（保留段落级格式，文本按 runs 重写）。
 
     简化方案：拼接全部 run 文本 → 整体脱敏 → 写回第一个 run，其余 run 清空。
@@ -26,7 +29,7 @@ def _mask_runs_paragraph(paragraph, ruleset: RuleSet, pepper: str | None, strate
     original = "".join(run.text for run in paragraph.runs)
     if not original.strip():
         return
-    masked = mask_text_pii(original, ruleset, pepper, strategy)
+    masked = mask_text_pii(original, ruleset, pepper, strategy, scan_names, person_list)
     if masked == original:
         return
     paragraph.runs[0].text = masked
@@ -34,12 +37,15 @@ def _mask_runs_paragraph(paragraph, ruleset: RuleSet, pepper: str | None, strate
         run.text = ""
 
 
-def _mask_table(table, ruleset: RuleSet, pepper: str | None, strategy: str) -> None:
+def _mask_table(
+    table, ruleset: RuleSet, pepper: str | None, strategy: str,
+    scan_names: bool = False, person_list: set[str] | None = None,
+) -> None:
     """脱敏表格每个单元格。"""
     for row in table.rows:
         for cell in row.cells:
             for paragraph in cell.paragraphs:
-                _mask_runs_paragraph(paragraph, ruleset, pepper, strategy)
+                _mask_runs_paragraph(paragraph, ruleset, pepper, strategy, scan_names, person_list)
 
 
 def mask_docx_file(
@@ -48,6 +54,8 @@ def mask_docx_file(
     ruleset: RuleSet,
     pepper: str | None,
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 .docx → .docx，返回段落数。"""
     src = Path(input_path)
@@ -66,11 +74,11 @@ def mask_docx_file(
     count = 0
     # 正文段落
     for paragraph in document.paragraphs:
-        _mask_runs_paragraph(paragraph, ruleset, pepper, strategy)
+        _mask_runs_paragraph(paragraph, ruleset, pepper, strategy, scan_names, person_list)
         count += 1
     # 表格
     for table in document.tables:
-        _mask_table(table, ruleset, pepper, strategy)
+        _mask_table(table, ruleset, pepper, strategy, scan_names, person_list)
         count += sum(len(r.cells) for r in table.rows)
 
     document.save(str(dst))

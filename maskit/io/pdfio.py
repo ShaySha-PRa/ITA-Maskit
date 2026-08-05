@@ -71,6 +71,8 @@ def mask_pdf_file(
     ruleset: RuleSet,
     pepper: str | None,
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 PDF → PDF，返回页数。"""
     src = Path(input_path)
@@ -82,6 +84,6 @@ def mask_pdf_file(
     if not pages:
         raise ValueError(f"PDF 文件无文本内容: {src}")
 
-    masked_pages = [mask_text_pii(p, ruleset, pepper, strategy) for p in pages]
+    masked_pages = [mask_text_pii(p, ruleset, pepper, strategy, scan_names, person_list) for p in pages]
     _write_pdf_text(dst, masked_pages)
     return len(masked_pages)

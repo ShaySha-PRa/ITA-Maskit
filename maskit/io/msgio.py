@@ -25,6 +25,8 @@ def mask_msg_file(
     ruleset: RuleSet,
     pepper: str | None,
     strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 .msg → .eml，返回 1（单封邮件）。"""
     src = Path(input_path)
@@ -44,7 +46,7 @@ def mask_msg_file(
     if eml is None:
         raise ValueError(f"Outlook 邮件无内容: {src}")
 
-    mask_email_message(eml, ruleset, pepper, strategy)
+    mask_email_message(eml, ruleset, pepper, strategy, scan_names, person_list)
 
     from email import policy
 

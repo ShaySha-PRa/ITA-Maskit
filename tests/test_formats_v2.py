@@ -25,6 +25,74 @@ def test_mask_text_pii_mask():
     assert "张伟" in out  # name 不参与全文扫描
 
 
+def test_mask_text_scan_names_prefix():
+    """scan_names=True：语义前缀识别名字/公司，普通文字不误伤。"""
+    from maskit.text import mask_text_pii
+
+    rs = load_ruleset()
+    text = "申请人：张伟，审批人：李娜。供应商：亚玛芬体育。采购流程需要审批。"
+    out = mask_text_pii(text, rs, None, "mask", scan_names=True)
+    assert "张*" in out  # 申请人：张伟 → 张*
+    assert "李*" in out
+    assert "亚*" in out
+    assert "采购流程需要审批" in out  # 普通文字不误伤
+
+
+def test_mask_text_scan_names_wordlist():
+    """scan_names=True：词表里的名字无前缀也识别。"""
+    from maskit.text import mask_text_pii
+
+    rs = load_ruleset()
+    out = mask_text_pii("审批单由 亚玛芬体育 出具。", rs, None, "mask", scan_names=True)
+    assert "亚*" in out
+
+
+def test_mask_text_scan_names_pseudo_deterministic():
+    """scan_names pseudo：确定性。"""
+    from maskit.text import mask_text_pii
+
+    rs = load_ruleset()
+    text = "申请人：张伟，供应商：亚玛芬体育"
+    a = mask_text_pii(text, rs, "pep", "pseudo", scan_names=True)
+    b = mask_text_pii(text, rs, "pep", "pseudo", scan_names=True)
+    assert a == b
+    assert "张伟" not in a
+
+
+def test_person_list_dynamic_wordlist(tmp_path):
+    """外部人员清单：全文匹配不易判断的人名（纯本地）。"""
+    from maskit.rules.name_company import load_person_list
+    from maskit.text import mask_text_pii
+
+    csv = tmp_path / "people.csv"
+    csv.write_text("employee_id,name,department\nEID-1001,欧阳修,IT部\nEID-1002,司马光,审计部\n", encoding="utf-8")
+    people = load_person_list(csv)
+    assert "欧阳修" in people
+
+    rs = load_ruleset()
+    text = "本次审计由欧阳修负责，司马光复核。"
+    out = mask_text_pii(text, rs, None, "mask", scan_names=True, person_list=people)
+    assert "欧阳修" not in out
+    assert "欧*" in out
+
+
+def test_person_list_builtin_still_guards():
+    """内置词表防误伤：张伟达不因「张伟」被误伤。"""
+    from maskit.text import mask_text_pii
+
+    rs = load_ruleset()
+    out = mask_text_pii("张伟达负责审批", rs, None, "mask", scan_names=True)
+    assert "张伟达" in out  # 未被误伤
+
+
+def test_person_list_missing_file(tmp_path):
+    """人员清单不存在 → FileNotFoundError。"""
+    from maskit.rules.name_company import load_person_list
+
+    with pytest.raises(FileNotFoundError):
+        load_person_list(tmp_path / "nope.csv")
+
+
 def test_mask_text_pii_pseudo_deterministic():
     """文本扫描：pseudo 确定性。"""
     from maskit.text import mask_text_pii

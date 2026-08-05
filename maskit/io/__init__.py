@@ -26,12 +26,13 @@ def mask_file(
     strategy: str = "mask",
     scan_names: bool = False,
     person_list: set[str] | None = None,
+    image_crop: bool = False,
 ) -> int:
     """统一脱敏入口：按扩展名分发，返回处理行数/页数/段数。
 
     表格格式（CSV/Excel/JSON）：按列脱敏，strategy 由 ruleset 每列决定。
-    文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定，
-    scan_names=True 时额外识别姓名/公司名（纯本地，person_list 为外部清单）。
+    文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定。
+    图片格式（PNG/JPG，beta）：需 image_crop=True 启用 OCR 裁剪。
     """
     ext = _ext(input_path)
 
@@ -70,14 +71,33 @@ def mask_file(
 
         return mask_docx_file(input_path, output_path, ruleset, pepper, strategy, scan_names, person_list)
 
+    if ext in {".png", ".jpg", ".jpeg"}:
+        if not image_crop:
+            raise ValueError(
+                f"图片脱敏是 beta 功能，需 --image-crop 显式启用（并安装 tesseract OCR）。"
+                f"输入: {input_path}"
+            )
+        from maskit.io.imageio import mask_image_file
+
+        return mask_image_file(input_path, output_path, ruleset, pepper, strategy)
+
     raise ValueError(
         f"不支持的输入格式: {ext}（支持 csv/xlsx/xls/json/jsonl/ndjson/eml/msg/pdf/docx）"
     )
 
 
-SUPPORTED_FORMATS = [".csv", ".xlsx", ".xls", ".json", ".jsonl", ".ndjson", ".eml", ".msg", ".pdf", ".docx"]
+SUPPORTED_FORMATS = [
+    ".csv", ".xlsx", ".xls", ".json", ".jsonl", ".ndjson",
+    ".eml", ".msg", ".pdf", ".docx",
+    ".png", ".jpg", ".jpeg",  # beta：需 --image-crop
+]
 
 
 def is_text_format(path) -> bool:
     """判断是否为文本格式（全文 PII 扫描）。"""
     return _ext(path) in _TEXT_FORMATS
+
+
+def is_image_format(path) -> bool:
+    """判断是否为图片格式（beta 裁剪脱敏）。"""
+    return _ext(path) in {".png", ".jpg", ".jpeg"}

@@ -15,6 +15,7 @@
 | **确定性伪名化** | 同一敏感值在不同文件/批次映射到**同一伪名**（HMAC + pepper），保留跨表关联、审计可追溯 |
 | **数据驱动规则** | YAML 覆盖/新增规则（正则 + 遮盖模板 + 版本号），响应每年变化的合规要求 |
 | **姓名/公司识别** | `--scan-names` 语义前缀 + 词表 + `--person-list` 全量人员清单，纯本地 |
+| **图片裁剪脱敏（beta）** | `--image-crop` OCR 定位敏感文字区域并裁剪掉（图变小），需 tesseract |
 | **高性能** | Polars（Rust 内核），100 万行全 mask 约 **4 秒**，含伪名化约 **10 秒** |
 | **审计日志** | JSONL 记录操作、规则版本、pepper 指纹（不存明文，domain separation） |
 
@@ -100,6 +101,22 @@ maskit mask mail.eml --scan-names --person-list people.csv -o mail_masked.eml
 
 **数据安全**：全部本地正则 + 本地 CSV，**无模型、无网络、数据不出机器**。
 
+## 图片脱敏（beta，默认关闭）
+
+图片里的敏感信息（邮箱/IP/手机号/工号等）用 OCR 定位后**裁剪掉**（图片变小），不是打码遮盖——敏感信息彻底移除。
+
+```bash
+# 启用图片裁剪脱敏（beta）
+pip install -e ".[image]"        # 安装 Pillow + pytesseract
+# 另需手动安装 tesseract 二进制 + 中文语言包（apt install tesseract-ocr tesseract-ocr-chi-sim）
+
+maskit mask screenshot.png --image-crop -o out.png
+```
+
+- **默认关闭**：不传 `--image-crop` 时图片格式直接报错提示（beta 阶段不默认处理）
+- **数据安全**：tesseract 本地 OCR，数据不出机器
+- **已知局限**：裁剪后图片尺寸变小；OCR 识别率受图片质量影响
+
 ## 命令
 
 | 命令 | 说明 |
@@ -149,13 +166,13 @@ rules:
 - **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。
 - **.msg 输入输出 .eml**：Outlook `.msg` 是私有 OLE 格式，Python 无库能可靠回写，因此脱敏后输出标准 `.eml`（可打开/转发/作证据）。`.msg→.eml` 的 MIME boundary 每次随机，输出**内容确定但非逐字节一致**。
 - **邮件只支持 .eml/.msg**：Outlook 其它私有格式不在范围。
-- **图片（PNG/JPG）不支持**：需 OCR 定位文字后打码，规划在后续版本。
+- **图片脱敏是 beta**：`--image-crop` 启用，OCR 定位敏感文字区域并**裁剪掉**（图片变小）。需手动安装 tesseract + 中文语言包（`pip install -e ".[image]"` + 系统 tesseract）。
 
 ## 版本历史
 
 | 版本 | 内容 |
 |------|------|
-| **V3** (0.3.0) | 姓名/公司名文本识别（`--scan-names` 语义前缀+词表）+ 全量人员清单（`--person-list` 动态词表）+ Outlook .msg + Excel 多 sheet，纯本地零网络 |
+| **V3** (0.3.0) | 姓名/公司名文本识别（`--scan-names`）+ 全量人员清单（`--person-list`）+ Outlook .msg + Excel 多 sheet + 图片裁剪脱敏（beta `--image-crop`），纯本地零网络 |
 | **V2** (0.2.0) | 多格式支持：Excel/JSON/邮件/PDF/Word，双引擎架构（表格按列 + 文本全文 PII 扫描） |
 | **V1** (0.1.0) | CSV 脱敏 + 确定性伪名化 + 数据驱动规则 + 审计日志 |
 

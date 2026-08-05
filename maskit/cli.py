@@ -59,6 +59,9 @@ def mask(
     person_list_file: str | None = typer.Option(
         None, "--person-list", help="全量人员清单 CSV（含姓名列，动态词表，识别不易判断的人名，纯本地）"
     ),
+    image_crop: bool = typer.Option(
+        False, "--image-crop", help="图片脱敏（beta）：OCR 定位敏感文字区域并裁剪掉，需安装 tesseract"
+    ),
     output: str | None = typer.Option(
         None, "--output", "-o", help="输出路径（缺省为 input.masked.<ext>）"
     ),
@@ -95,7 +98,7 @@ def mask(
 
         rows = mask_file(
             input_path, out, ruleset, resolved_pepper,
-            encoding, strategy, scan_names, person_list,
+            encoding, strategy, scan_names, person_list, image_crop,
         )
 
         # 审计日志

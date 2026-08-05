@@ -23,6 +23,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 图片脱敏（beta）：需 --image-crop 启用，另需手动安装 tesseract 二进制 + 中文语言包
+image = [
+    "pillow>=10.0",
+    "pytesseract>=0.3",
+]
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",

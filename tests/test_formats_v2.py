@@ -60,6 +60,33 @@ def test_excel_end_to_end(tmp_path):
     assert masked["ip"].to_list() == ["*.*.*.*", "*.*.*.*"]
 
 
+def test_excel_multi_sheet(tmp_path):
+    """多 sheet Excel：每个 sheet 都脱敏，保留 sheet 结构。"""
+    from openpyxl import Workbook, load_workbook
+
+    src = tmp_path / "in.xlsx"
+    out = tmp_path / "out.xlsx"
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "用户"
+    ws1.append(["name", "email", "ip"])
+    ws1.append(["张伟", "a@b.com", "10.1.2.3"])
+    ws2 = wb.create_sheet("权限")
+    ws2.append(["employee_id", "phone"])
+    ws2.append(["EID-1001", "13800000000"])
+    wb.save(str(src))
+
+    rows = mask_file(src, out, load_ruleset(), None)
+    assert rows == 2  # 两个 sheet 各 1 行
+
+    wb2 = load_workbook(str(out))
+    assert wb2.sheetnames == ["用户", "权限"]
+    data1 = [[str(c.value) for c in row] for row in wb2["用户"].iter_rows()]
+    data2 = [[str(c.value) for c in row] for row in wb2["权限"].iter_rows()]
+    assert data1[1] == ["张*", "a***@b.com", "*.*.*.*"]
+    assert data2[1] == ["EID-***", "138****0000"]
+
+
 # --- JSON / JSONL ---
 
 

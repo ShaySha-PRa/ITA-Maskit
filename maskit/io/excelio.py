@@ -1,16 +1,20 @@
 """Excel 读写。
 
-用 Polars read_excel（openpyxl 引擎）读取，_mask_dataframe 脱敏，write_excel 写出。
-v2 只处理第一个 sheet（审计常见场景）。
+openpyxl 读取全部 sheet，逐 sheet 脱敏后写回，保留多 sheet 结构。
+每 sheet 独立按列脱敏（_mask_dataframe）。
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-import polars as pl
-
 from maskit.io.csvio import _mask_dataframe
 from maskit.rules.defs import RuleSet
+
+# openpyxl 用于读/写 xlsx（保留多 sheet）
+try:
+    from openpyxl import load_workbook
+except ImportError:  # pragma: no cover
+    load_workbook = None
 
 
 def mask_excel_file(
@@ -19,32 +23,54 @@ def mask_excel_file(
     ruleset: RuleSet,
     pepper: str | None,
 ) -> int:
-    """脱敏 Excel（第一个 sheet）→ Excel，返回处理行数。"""
+    """脱敏 Excel（全部 sheet）→ Excel，返回总处理行数。
+
+    用 openpyxl 读取全部 sheet → 逐 sheet 转 Polars 脱敏 → 写回。
+    """
     src = Path(input_path)
     dst = Path(output_path)
     if not src.exists():
         raise FileNotFoundError(f"输入文件不存在: {src}")
 
-    # 读取第一个 sheet（read_excel 返回 {sheet_name: DataFrame}）
+    if load_workbook is None:
+        raise ValueError("需要安装 openpyxl 才能处理 Excel")
+
     try:
-        sheets = pl.read_excel(src, engine="openpyxl")
-        if isinstance(sheets, dict):
-            if not sheets:
-                raise ValueError(f"Excel 文件无工作表: {src}")
-            df = next(iter(sheets.values()))
-        else:
-            df = sheets
-    except ValueError:
-        raise
+        wb = load_workbook(src, data_only=True)
     except Exception as exc:
         raise ValueError(f"无法读取 Excel 文件: {src} ({exc})") from exc
 
-    if df.height == 0:
-        raise ValueError(f"Excel 文件无数据: {src}")
+    if not wb.sheetnames:
+        raise ValueError(f"Excel 文件无工作表: {src}")
 
-    masked = _mask_dataframe(df, ruleset, pepper)
-    if masked.height == 0:
-        raise ValueError(f"Excel 文件无数据: {src}")
+    import polars as pl
 
-    masked.write_excel(dst)
-    return masked.height
+    total = 0
+    for ws in wb.worksheets:
+        # 读取 sheet 数据为 list[list]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+        header = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
+        data = rows[1:]
+        if not data:
+            continue
+        df = pl.DataFrame(data, schema=header, orient="row")
+        masked = _mask_dataframe(df, ruleset, pepper)
+        total += masked.height
+        # 写回该 sheet
+        _write_sheet(ws, header, masked)
+
+    wb.save(dst)
+    return total
+
+
+def _write_sheet(ws, header: list[str], df) -> None:
+    """把脱敏后的 DataFrame 写回 openpyxl worksheet。"""
+    # 先清空原内容
+    ws.delete_rows(1, ws.max_row)
+    # 写 header
+    ws.append(header)
+    # 写数据（DataFrame 已全为字符串列）
+    for row in df.iter_rows():
+        ws.append(list(row))

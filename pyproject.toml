@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ita-maskit"
-version = "0.1.0"
+version = "0.3.0"
 description = "ITA data masking CLI — 高性能数据脱敏工具"
 readme = "README.md"
 requires-python = ">=3.10"

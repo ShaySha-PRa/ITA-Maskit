@@ -22,7 +22,6 @@ import typer
 from maskit import __version__
 from maskit.audit import log_run, read_logs
 from maskit.demo import write_demo
-from maskit.io.csvio import mask_csv_file
 from maskit.rules.loader import list_rules, load_ruleset
 
 app = typer.Typer(help="ITA-maskit — 高性能数据脱敏工具", no_args_is_help=True)
@@ -43,37 +42,52 @@ def _resolve_pepper(cli_pepper: str | None) -> str | None:
 
 @app.command()
 def mask(
-    input_path: str = typer.Argument(..., help="输入 CSV 文件路径"),
+    input_path: str = typer.Argument(..., help="输入文件路径（csv/xlsx/json/eml/pdf/docx）"),
     rules_file: str | None = typer.Option(
         None, "--rules", "-r", help="规则 YAML 文件（缺省用内置默认规则集）"
     ),
     pepper: str | None = typer.Option(
         None, "--pepper", help="伪名化密钥（也可用 MASKIT_PEPPER 环境变量）"
     ),
-    encoding: str = typer.Option("utf-8", "--encoding", help="输入编码（utf-8/gbk）"),
+    encoding: str = typer.Option("utf-8", "--encoding", help="输入编码（表格格式，utf-8/gbk）"),
+    strategy: str = typer.Option(
+        "mask", "--strategy", help="文本格式（邮件/PDF/Word）的扫描策略：mask 或 pseudo"
+    ),
     output: str | None = typer.Option(
-        None, "--output", "-o", help="输出 CSV 路径（缺省为 input.masked.csv）"
+        None, "--output", "-o", help="输出路径（缺省为 input.masked.<ext>）"
     ),
 ) -> None:
-    """对 CSV 执行脱敏。"""
+    """对文件执行脱敏（支持 csv/xlsx/json/eml/pdf/docx）。"""
     try:
         ruleset = load_ruleset(rules_file)
         resolved_pepper = _resolve_pepper(pepper)
 
-        # 提前校验：若任一列用 pseudo 且无 pepper → 用户错误
-        has_pseudo = any(s.strategy == "pseudo" for s in ruleset.specs)
+        from maskit.io import is_text_format
+
+        is_text = is_text_format(input_path)
+        # 文本格式：全文扫描，用 --strategy；表格格式：按列，规则集决定策略
+        if is_text:
+            has_pseudo = strategy == "pseudo"
+        else:
+            has_pseudo = any(s.strategy == "pseudo" for s in ruleset.specs)
         if has_pseudo and not resolved_pepper:
             raise UserError(
                 "检测到 pseudo（确定性伪名化）策略但未提供 --pepper（或 MASKIT_PEPPER 环境变量）。"
                 "伪名化需要密钥才能保证确定性，请提供 pepper 后重试。"
             )
 
-        out = output or str(Path(input_path).with_suffix(".masked.csv"))
-        rows = mask_csv_file(input_path, out, ruleset, resolved_pepper, encoding)
+        in_path = Path(input_path)
+        out = output or str(in_path.with_suffix(".masked" + in_path.suffix))
+        from maskit.io import mask_file
+
+        rows = mask_file(input_path, out, ruleset, resolved_pepper, encoding, strategy)
 
         # 审计日志
-        mask_cols = [s.column for s in ruleset.specs if s.strategy == "mask"]
-        pseudo_cols = [s.column for s in ruleset.specs if s.strategy == "pseudo"]
+        if is_text:
+            mask_cols, pseudo_cols = [], [input_path] if strategy == "pseudo" else []
+        else:
+            mask_cols = [s.column for s in ruleset.specs if s.strategy == "mask"]
+            pseudo_cols = [s.column for s in ruleset.specs if s.strategy == "pseudo"]
         log_run(
             input_file=input_path,
             output_file=out,
@@ -84,9 +98,9 @@ def mask(
             pseudo_columns=pseudo_cols,
         )
 
-        typer.echo(f"✓ 已脱敏 {rows} 行 → {out}")
+        typer.echo(f"✓ 已脱敏 {rows} 项 → {out}")
         if pseudo_cols:
-            typer.echo(f"  伪名化列: {', '.join(pseudo_cols)}（确定性，跨文件可关联）")
+            typer.echo(f"  伪名化: {', '.join(pseudo_cols)}（确定性，跨文件可关联）")
         if mask_cols:
             typer.echo(f"  遮盖列: {', '.join(mask_cols)}")
         typer.echo(f"  规则集版本: {ruleset.version}")

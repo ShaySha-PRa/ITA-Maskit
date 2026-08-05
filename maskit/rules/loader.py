@@ -38,6 +38,7 @@ def _build_rule_def(name: str, raw: dict[str, Any]) -> RuleDef:
         pseudo=raw["pseudo"],
         normalize=raw.get("normalize", "default"),
         default_disabled=bool(raw.get("default_disabled", False)),
+        text_scanable=bool(raw.get("text_scanable", False)),
     )
 
 

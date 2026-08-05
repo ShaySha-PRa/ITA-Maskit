@@ -19,6 +19,8 @@ DEFAULT_VERSION = "1.0"
 
 # 内置规则定义（v1.0，YAML 可覆盖）
 # match 为识别正则；mask 为遮盖模板；pseudo 为确定性伪名模板（{hash:8} 占位）。
+# text_scanable=True → 该规则可用于文本流 PII 扫描（邮件/PDF/Word 正文）；
+# match 太宽泛（如 .+）的规则不可全文扫描，仅列式可用。
 BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
     "name": {
         "version": DEFAULT_VERSION,
@@ -26,6 +28,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{first}*",
         "pseudo": "N-{hash:8}",
         "normalize": "default",
+        "text_scanable": False,  # 无法在文本流中区分名字
     },
     "email": {
         "version": DEFAULT_VERSION,
@@ -33,6 +36,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{first}***@{domain}",
         "pseudo": "p{hash:8}@masked.local",
         "normalize": "lower",
+        "text_scanable": True,
     },
     "ip": {
         "version": DEFAULT_VERSION,
@@ -40,6 +44,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "*.*.*.*",  # 全遮盖
         "pseudo": "IP-{hash:8}",
         "normalize": "none",
+        "text_scanable": True,
     },
     "phone": {
         "version": DEFAULT_VERSION,
@@ -47,6 +52,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{head:3}****{tail:4}",
         "pseudo": "{digits}",  # 确定性数字，由 HMAC 派生
         "normalize": "phone",
+        "text_scanable": True,
     },
     "employee_id": {
         "version": DEFAULT_VERSION,
@@ -54,6 +60,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{prefix}-***",
         "pseudo": "{prefix}-{hash:8}",
         "normalize": "upper",
+        "text_scanable": True,
     },
     "account": {
         "version": DEFAULT_VERSION,
@@ -61,6 +68,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{first}***{last}",
         "pseudo": "A-{hash:8}",
         "normalize": "default",
+        "text_scanable": False,  # 纯字母数字无边界，易误伤普通单词
     },
     "company": {
         "version": DEFAULT_VERSION,
@@ -68,6 +76,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{first}*",
         "pseudo": "C-{hash:8}",
         "normalize": "default",
+        "text_scanable": False,  # 无法在文本流中区分公司名
     },
     "app_version": {
         "version": DEFAULT_VERSION,
@@ -75,6 +84,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "v{major}.*.*",
         "pseudo": "V-{hash:8}",
         "normalize": "lower",
+        "text_scanable": True,
     },
     # 合规敏感，默认关闭（需在 YAML 显式启用）
     "ssn": {
@@ -84,6 +94,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "SSN-{hash:8}",
         "normalize": "none",
         "default_disabled": True,
+        "text_scanable": True,
     },
     "credit_card": {
         "version": DEFAULT_VERSION,
@@ -92,6 +103,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "CC-{hash:8}",
         "normalize": "none",
         "default_disabled": True,
+        "text_scanable": True,
     },
 }
 
@@ -137,6 +149,7 @@ class RuleDef:
     pseudo: str
     normalize: str = "default"
     default_disabled: bool = False
+    text_scanable: bool = False  # 是否可用于文本流 PII 扫描
 
     @property
     def regex(self) -> re.Pattern:

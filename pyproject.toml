@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ita-maskit"
+version = "0.1.0"
+description = "ITA data masking CLI — 高性能数据脱敏工具"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ShaySha-PRa" }]
+keywords = ["masking", "data-anonymization", "pseudonymization", "audit", "polars"]
+dependencies = [
+    "polars>=0.20",
+    "typer>=0.9",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+maskit = "maskit.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["maskit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

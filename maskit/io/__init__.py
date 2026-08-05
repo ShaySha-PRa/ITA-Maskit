@@ -13,8 +13,8 @@ def _ext(path) -> str:
     return Path(path).suffix.lower()
 
 
-# 文本格式：无「列」，全文 PII 扫描，输出同格式
-_TEXT_FORMATS = {".eml", ".pdf", ".docx"}
+# 文本格式：无「列」，全文 PII 扫描（.msg 输出 .eml，其余同格式）
+_TEXT_FORMATS = {".eml", ".msg", ".pdf", ".docx"}
 
 
 def mask_file(
@@ -52,6 +52,11 @@ def mask_file(
 
         return mask_email_file(input_path, output_path, ruleset, pepper, strategy)
 
+    if ext == ".msg":
+        from maskit.io.msgio import mask_msg_file
+
+        return mask_msg_file(input_path, output_path, ruleset, pepper, strategy)
+
     if ext == ".pdf":
         from maskit.io.pdfio import mask_pdf_file
 
@@ -62,10 +67,12 @@ def mask_file(
 
         return mask_docx_file(input_path, output_path, ruleset, pepper, strategy)
 
-    raise ValueError(f"不支持的输入格式: {ext}（支持 csv/xlsx/xls/json/jsonl/ndjson/eml/pdf/docx）")
+    raise ValueError(
+        f"不支持的输入格式: {ext}（支持 csv/xlsx/xls/json/jsonl/ndjson/eml/msg/pdf/docx）"
+    )
 
 
-SUPPORTED_FORMATS = [".csv", ".xlsx", ".xls", ".json", ".jsonl", ".ndjson", ".eml", ".pdf", ".docx"]
+SUPPORTED_FORMATS = [".csv", ".xlsx", ".xls", ".json", ".jsonl", ".ndjson", ".eml", ".msg", ".pdf", ".docx"]
 
 
 def is_text_format(path) -> bool:

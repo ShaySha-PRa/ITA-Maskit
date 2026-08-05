@@ -9,6 +9,7 @@ stdlib email 解析 headers + body：
 from __future__ import annotations
 
 from email import policy
+from email.message import EmailMessage
 from email.parser import BytesParser
 from pathlib import Path
 
@@ -52,6 +53,37 @@ def _mask_header_value(
     return value  # 其它 header（Date/Message-ID 等）不动
 
 
+def mask_email_message(
+    msg: EmailMessage,
+    ruleset: RuleSet,
+    pepper: str | None,
+    strategy: str = "mask",
+) -> None:
+    """就地脱敏一个 email.message（headers + body），供 .eml 和 .msg 复用。"""
+    # 脱敏 headers
+    for name in list(msg.keys()):
+        values = msg.get_all(name)
+        if values:
+            masked_values = [_mask_header_value(name, v, ruleset, pepper, strategy) for v in values]
+            del msg[name]
+            for v in masked_values:
+                msg[name] = v
+
+    # 脱敏 body（逐 part）
+    for part in msg.walk():
+        ctype = part.get_content_type()
+        if ctype in ("text/plain", "text/html"):
+            try:
+                body = part.get_payload(decode=True)
+                charset = part.get_content_charset() or "utf-8"
+                text = body.decode(charset, errors="replace")
+            except Exception:  # noqa: BLE001, S112 — 单 part 解码失败跳过，不影响整封邮件
+                continue
+            masked = mask_text_pii(text, ruleset, pepper, strategy)
+            if masked != text:
+                part.set_payload(masked, charset=charset)
+
+
 def mask_email_file(
     input_path: str | Path,
     output_path: str | Path,
@@ -77,28 +109,7 @@ def mask_email_file(
     if msg is None:
         raise ValueError(f"邮件文件无内容: {src}")
 
-    # 脱敏 headers
-    for name in list(msg.keys()):
-        values = msg.get_all(name)
-        if values:
-            masked_values = [_mask_header_value(name, v, ruleset, pepper, strategy) for v in values]
-            del msg[name]
-            for v in masked_values:
-                msg[name] = v
-
-    # 脱敏 body（逐 part）
-    for part in msg.walk():
-        ctype = part.get_content_type()
-        if ctype in ("text/plain", "text/html"):
-            try:
-                body = part.get_payload(decode=True)
-                charset = part.get_content_charset() or "utf-8"
-                text = body.decode(charset, errors="replace")
-            except Exception:  # noqa: BLE001, S112 — 单 part 解码失败跳过，不影响整封邮件
-                continue
-            masked = mask_text_pii(text, ruleset, pepper, strategy)
-            if masked != text:
-                part.set_payload(masked, charset=charset)
+    mask_email_message(msg, ruleset, pepper, strategy)
 
     dst.write_bytes(msg.as_bytes(policy=policy.default))
     return 1

@@ -9,7 +9,7 @@
 | 能力 | 说明 |
 |------|------|
 | **8 类内置敏感字段** | 姓名、邮箱、IP（全遮盖 `*.*.*.*`）、手机号、工号、账号、公司名、软件版本号 |
-| **9 种文件格式** | CSV / Excel / JSON / JSONL / 邮件(.eml) / PDF / Word(.docx) |
+| **10 种文件格式** | CSV / Excel / JSON / JSONL / 邮件(.eml) / Outlook(.msg) / PDF / Word(.docx) |
 | **双引擎架构** | 表格引擎（按列脱敏）+ 文本引擎（全文 PII 扫描） |
 | **两种脱敏策略** | `mask`（部分遮盖，保留可读性）+ `pseudo`（确定性伪名化） |
 | **确定性伪名化** | 同一敏感值在不同文件/批次映射到**同一伪名**（HMAC + pepper），保留跨表关联、审计可追溯 |
@@ -66,6 +66,7 @@ maskit audit
 | Excel | `.xlsx` / `.xls` | 表格（按列） | Excel |
 | JSON / JSONL | `.json` / `.jsonl` / `.ndjson` | 表格（按列） | JSONL |
 | 邮件 | `.eml` | 文本（全文扫描） | 脱敏 .eml |
+| Outlook 邮件 | `.msg` | 文本（全文扫描） | 脱敏 .eml（见局限） |
 | PDF | `.pdf` | 文本（全文扫描） | 脱敏 PDF |
 | Word | `.docx` | 文本（全文扫描） | 脱敏 .docx |
 
@@ -129,7 +130,8 @@ rules:
 - **PDF 是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。如需原样遮盖需 PDF 图层级技术（v3 或独立项目）。
 - **文本格式不扫描 name/company**：`name`/`company` 的匹配正则太宽（`.+`），在全文里无法区分「名字」和「普通文字」，为避免误伤，默认只扫描有精确正则的字段（email/ip/phone/employee_id/app_version/ssn/credit_card）。如需在文本中识别名字，需额外配置。
 - **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。
-- **邮件只支持 .eml**：Outlook `.msg` 格式不在 v1/v2 范围。
+- **.msg 输入输出 .eml**：Outlook `.msg` 是私有 OLE 格式，Python 无库能可靠回写，因此脱敏后输出标准 `.eml`（可打开/转发/作证据）。`.msg→.eml` 的 MIME boundary 每次随机，输出**内容确定但非逐字节一致**。
+- **邮件只支持 .eml/.msg**：Outlook 其它私有格式不在范围。
 - **图片（PNG/JPG）不支持**：需 OCR 定位文字后打码，规划在 v3。
 
 ## 安全边界

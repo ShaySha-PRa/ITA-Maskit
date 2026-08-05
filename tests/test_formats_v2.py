@@ -1,4 +1,6 @@
-"""v2 格式测试：Excel/JSON/邮件/PDF/Word 端到端 + 统一入口分发。"""
+"""v2 格式测试：Excel/JSON/邮件/PDF/Word/.msg 端到端 + 统一入口分发。"""
+
+from pathlib import Path
 
 import polars as pl
 import pytest
@@ -152,6 +154,49 @@ def test_email_deterministic(tmp_path):
     assert out1.read_bytes() == out2.read_bytes()
 
 
+# --- Outlook .msg ---
+
+_SAMPLE_MSG = Path(__file__).parent / "samples" / "sample.msg"
+
+
+def test_msg_end_to_end(tmp_path):
+    """.msg → 脱敏 → .eml：headers 邮箱被脱敏。"""
+    from email import policy
+    from email.parser import BytesParser
+
+    out = tmp_path / "out.eml"
+    rows = mask_file(_SAMPLE_MSG, out, load_ruleset(), None, strategy="mask")
+    assert rows == 1
+
+    msg = BytesParser(policy=policy.default).parsebytes(out.read_bytes())
+    # From/To 里的邮箱被脱敏
+    assert "bob@example.com" not in str(msg["From"])
+    assert "alice@example.com" not in str(msg["To"])
+
+
+def test_msg_pseudo(tmp_path):
+    """.msg pseudo 脱敏：邮箱被确定性替换。"""
+    from email import policy
+    from email.parser import BytesParser
+
+    out = tmp_path / "out.eml"
+    mask_file(_SAMPLE_MSG, out, load_ruleset(), "pep", strategy="pseudo")
+
+    msg = BytesParser(policy=policy.default).parsebytes(out.read_bytes())
+    from_val = str(msg["From"])
+    assert "bob@example.com" not in from_val
+    assert "@masked.local" in from_val or "p" in from_val  # 伪名化邮箱
+
+
+def test_msg_unsupported_write_back():
+    """.msg 输出 .eml（Python 无库可靠回写 .msg），不报错。"""
+    import extract_msg
+
+    with extract_msg.Message(str(_SAMPLE_MSG)) as m:
+        eml = m.asEmailMessage()
+        assert eml is not None
+
+
 # --- Word ---
 
 
@@ -203,12 +248,14 @@ def test_supported_formats():
     assert ".csv" in SUPPORTED_FORMATS
     assert ".xlsx" in SUPPORTED_FORMATS
     assert ".eml" in SUPPORTED_FORMATS
+    assert ".msg" in SUPPORTED_FORMATS
     assert ".pdf" in SUPPORTED_FORMATS
     assert ".docx" in SUPPORTED_FORMATS
 
 
 def test_is_text_format():
     assert is_text_format("x.eml")
+    assert is_text_format("x.msg")
     assert is_text_format("x.pdf")
     assert is_text_format("x.docx")
     assert not is_text_format("x.csv")

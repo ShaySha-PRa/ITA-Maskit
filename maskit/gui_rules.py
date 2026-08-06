@@ -452,9 +452,11 @@ class RulesManagerDialog(QDialog):
         if QMessageBox.question(self, "AI 生成结果", preview + "\n\n确定存入当前规则集？") != QMessageBox.Yes:
             return
 
-        # 存入当前规则集
-        for name, raw in rs.defs.items():
-            self.defs[name] = dict(raw)
+        # 存入当前规则集（RuleDef → dict，用 dataclasses.asdict 保留全部字段）
+        from dataclasses import asdict
+
+        for name, rule in rs.defs.items():
+            self.defs[name] = {k: v for k, v in asdict(rule).items() if v}
         self._refresh_table()
         QMessageBox.information(self, "已添加", f"AI 已生成 {len(new_rules)} 条规则。\n点「保存当前规则集」生效。")
 

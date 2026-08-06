@@ -103,6 +103,15 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "text_scanable": True,
         "keywords": ["身份证", "证件号", "id_card", "idcard", "idnumber", "证件号码", "身份证号"],
     },
+    "bank_card": {
+        "version": DEFAULT_VERSION,
+        "match": r"^\d{16,19}$",  # 银行卡号 16-19 位纯数字
+        "mask": "{head:6}**********{tail:4}",  # 保留前6后4，中间隐藏
+        "pseudo": "BC-{hash:8}",
+        "normalize": "none",
+        "text_scanable": True,
+        "keywords": ["银行卡", "卡号", "银行账户", "bank_card", "bankcard", "bank_account", "银行卡号"],
+    },
     # 合规敏感，默认关闭（需在 YAML 显式启用）
     "ssn": {
         "version": DEFAULT_VERSION,

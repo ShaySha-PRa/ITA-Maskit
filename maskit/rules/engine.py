@@ -176,7 +176,7 @@ def _apply_single_count(
 # 值级检测白名单：只对这些「强特征」规则做整值检测。
 # 弱特征规则（app_version/account/employee_id/phone）误伤率高
 # （会匹配 2.5/2024.1.1 等日期小数），排除。
-_VALUE_SCAN_RULES = {"email", "ip", "id_card"}
+_VALUE_SCAN_RULES = {"email", "ip", "id_card", "bank_card"}
 
 # 中文人名检测（排除词表 + 姓氏开头）：
 # 值级检测对「排除词表外 + 姓氏开头 + 2-4字纯中文」判定为人名，按 name 规则脱敏。

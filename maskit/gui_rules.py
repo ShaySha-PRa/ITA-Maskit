@@ -61,6 +61,21 @@ class RuleEditDialog(QDialog):
         hint.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(hint)
 
+        # 测试预览区
+        preview_row = QHBoxLayout()
+        preview_label = QLabel("测试值:")
+        self.sample_input = QLineEdit()
+        self.sample_input.setPlaceholderText("输入样例值，如 110101199003077777")
+        preview_btn = QPushButton("测试脱敏")
+        preview_btn.clicked.connect(self._preview)
+        preview_row.addWidget(preview_label)
+        preview_row.addWidget(self.sample_input, 1)
+        preview_row.addWidget(preview_btn)
+        layout.addLayout(preview_row)
+        self.preview_result = QLabel("")
+        self.preview_result.setStyleSheet("color: #2d6cdf; font-weight: bold; padding: 4px;")
+        layout.addWidget(self.preview_result)
+
         buttons = QDialogButtonBox()
         validate_btn = buttons.addButton("校验", QDialogButtonBox.ActionRole)
         ok_btn = buttons.addButton("确定", QDialogButtonBox.AcceptRole)
@@ -68,6 +83,34 @@ class RuleEditDialog(QDialog):
         validate_btn.clicked.connect(self._validate)
         ok_btn.clicked.connect(self._accept)
         layout.addWidget(buttons)
+
+    def _preview(self):
+        """测试脱敏预览：用当前填的规则对样例值跑一遍。"""
+        from maskit.rules.engine import preview_rule
+        from maskit.rules.loader import _build_rule_def
+
+        sample = self.sample_input.text().strip()
+        if not sample:
+            QMessageBox.information(self, "提示", "请先输入测试值。")
+            return
+        try:
+            rule = _build_rule_def(
+                self.name_input.text() or "temp",
+                {
+                    "match": self.match_input.text(),
+                    "mask": self.mask_input.text(),
+                    "pseudo": self.pseudo_input.text(),
+                },
+            )
+        except ValueError as exc:
+            QMessageBox.warning(self, "规则不完整", str(exc))
+            return
+        # 预览 mask（无需 pepper）
+        result = preview_rule(rule, sample, "mask")
+        if result["changed"]:
+            self.preview_result.setText(f"遮盖: {result['original']} → {result['masked']}")
+        else:
+            self.preview_result.setText(f"遮盖: {result['original']} （未变化，检查正则是否匹配）")
 
     def _validate(self):
         from maskit.rules.user_rules import validate_rule_def

@@ -156,6 +156,25 @@ def _apply_single(rule: RuleDef, value: str, strategy: str, pepper: str | None) 
     return _apply_single_count(rule, value, strategy, pepper)["masked_value"]
 
 
+def preview_rule(
+    rule: RuleDef,
+    sample: str,
+    strategy: str = "mask",
+    pepper: str | None = None,
+) -> dict:
+    """预览单条规则对样例值的脱敏效果（GUI 规则编辑测试用）。
+
+    返回 {original, masked, changed, strategy}。复用 _apply_single。
+    """
+    masked = _apply_single(rule, sample, strategy, pepper)
+    return {
+        "original": sample,
+        "masked": masked,
+        "changed": 1 if masked != sample else 0,
+        "strategy": strategy,
+    }
+
+
 def _apply_single_count(
     rule: RuleDef, value: str, strategy: str, pepper: str | None
 ) -> dict:

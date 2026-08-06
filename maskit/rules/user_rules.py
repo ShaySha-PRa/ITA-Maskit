@@ -176,6 +176,19 @@ def load_ruleset(name: str) -> RuleSet:
     return RuleSet(defs=defs, specs=specs)
 
 
+def ruleset_info(name: str) -> dict:
+    """返回规则集信息：规则数、自定义规则数。"""
+    defs = _defs_for_ruleset(name)
+    builtin = set(BUILTIN_RULE_DEFS.keys())
+    custom = [n for n in defs if n not in builtin]
+    return {
+        "name": name,
+        "rule_count": len(defs),
+        "custom_count": len(custom),
+        "custom_rules": custom,
+    }
+
+
 def get_current_ruleset() -> str:
     """返回当前生效规则集名（默认「内置默认」）。"""
     path = _current_file()

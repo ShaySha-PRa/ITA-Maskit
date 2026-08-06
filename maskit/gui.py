@@ -12,13 +12,16 @@ import sys
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -45,20 +48,23 @@ class MaskWorker(QThread):
     finished_file = pyqtSignal(str, str, str)  # (文件名, 状态, 输出路径)
     all_done = pyqtSignal()
 
-    def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None):
+    def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
+                 ruleset_name: str | None = None):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
         self.strategy = strategy
         self.pepper = pepper
+        self.ruleset_name = ruleset_name
         self.total_stats = MaskStats()
 
     def run(self):
         from maskit.io import mask_file
         from maskit.rules.user_rules import get_current_ruleset, load_ruleset
 
-        # 加载当前规则集（GUI 规则管理里选中的）；默认内置
-        ruleset = load_ruleset(get_current_ruleset())
+        # 加载选中的规则集（主界面下拉）；缺省用当前规则集
+        name = self.ruleset_name or get_current_ruleset()
+        ruleset = load_ruleset(name)
         total = len(self.files)
         for i, f in enumerate(self.files):
             src = Path(f)
@@ -109,8 +115,16 @@ class DropArea(QFrame):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        files = [u.toLocalFile() for u in event.mimeData().urls()]
-        self.files_dropped.emit([f for f in files if os.path.isfile(f)])
+        from maskit.io import discover_files
+
+        paths = [u.toLocalFile() for u in event.mimeData().urls()]
+        files = []
+        for p in paths:
+            if os.path.isfile(p):
+                files.append(p)
+            elif os.path.isdir(p):
+                files.extend(discover_files(p))  # 文件夹递归扫描
+        self.files_dropped.emit(files)
 
 
 class MainWindow(QMainWindow):
@@ -157,6 +171,18 @@ class MainWindow(QMainWindow):
         options_row.addWidget(self.pepper_input, 1)
         layout.addLayout(options_row)
 
+        # 规则集选择
+        rs_row = QHBoxLayout()
+        rs_label = QLabel("脱敏规则:")
+        self.rs_combo = QComboBox()
+        self._reload_rulesets()
+        rs_row.addWidget(rs_label)
+        rs_row.addWidget(self.rs_combo, 1)
+        rs_hint = QLabel("（可到规则管理里新建/切换）")
+        rs_hint.setStyleSheet("color: #888; font-size: 11px;")
+        rs_row.addWidget(rs_hint)
+        layout.addLayout(rs_row)
+
         # 规则管理入口
         rules_row = QHBoxLayout()
         rules_btn = QPushButton("规则管理（可视化编辑）")
@@ -196,8 +222,15 @@ class MainWindow(QMainWindow):
         # ⑤ 结果列表
         self.result_table = QTableWidget(0, 3)
         self.result_table.setHorizontalHeaderLabels(["文件名", "状态", "输出路径"])
-        self.result_table.horizontalHeader().setStretchLastSection(True)
         self.result_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # 列宽：文件名自适应、状态固定、路径拉伸
+        header = self.result_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        self.result_table.setColumnWidth(1, 120)
+        # 双击打开文件
+        self.result_table.cellDoubleClicked.connect(self._open_cell_file)
         layout.addWidget(self.result_table, 1)
 
         # 打开输出文件夹按钮
@@ -227,6 +260,19 @@ class MainWindow(QMainWindow):
         self.files = files
         self.file_label.setText(f"已选 {len(files)} 个文件: {Path(files[0]).name}" + (" 等" if len(files) > 1 else ""))
 
+    def _reload_rulesets(self):
+        """刷新规则集下拉，默认选中当前规则集。"""
+        from maskit.rules.user_rules import get_current_ruleset, list_rulesets
+
+        self.rs_combo.blockSignals(True)
+        self.rs_combo.clear()
+        self.rs_combo.addItems(list_rulesets())
+        current = get_current_ruleset()
+        idx = self.rs_combo.findText(current)
+        if idx >= 0:
+            self.rs_combo.setCurrentIndex(idx)
+        self.rs_combo.blockSignals(False)
+
     def _start(self):
         if not self.files:
             QMessageBox.warning(self, "提示", "请先选择或拖入文件。")
@@ -237,6 +283,7 @@ class MainWindow(QMainWindow):
 
         strategy = "pseudo" if self.pseudo_cb.isChecked() else "mask"
         pepper = self.pepper_input.text() if self.pseudo_cb.isChecked() else None
+        ruleset_name = self.rs_combo.currentText() if hasattr(self, "rs_combo") else None
 
         self.start_btn.setEnabled(False)
         self.result_table.setRowCount(0)
@@ -245,7 +292,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
 
         self.worker = MaskWorker(
-            self.files, self.scan_names_cb.isChecked(), strategy, pepper
+            self.files, self.scan_names_cb.isChecked(), strategy, pepper,
+            ruleset_name=ruleset_name,
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.stats.connect(self._on_stats)
@@ -266,9 +314,38 @@ class MainWindow(QMainWindow):
     def _on_file_done(self, name: str, status: str, out: str):
         row = self.result_table.rowCount()
         self.result_table.insertRow(row)
-        self.result_table.setItem(row, 0, QTableWidgetItem(name))
-        self.result_table.setItem(row, 1, QTableWidgetItem(status))
-        self.result_table.setItem(row, 2, QTableWidgetItem(out))
+        name_item = QTableWidgetItem(name)
+        status_item = QTableWidgetItem(status)
+        out_item = QTableWidgetItem(out)
+        # 成功绿色 / 失败红色
+        if status.startswith("成功"):
+            color = QColor(232, 245, 233)  # 浅绿
+        elif status.startswith("失败"):
+            color = QColor(253, 237, 237)  # 浅红
+        else:
+            color = QColor(255, 255, 255)
+        for item in (name_item, status_item, out_item):
+            item.setBackground(color)
+        self.result_table.setItem(row, 0, name_item)
+        self.result_table.setItem(row, 1, status_item)
+        self.result_table.setItem(row, 2, out_item)
+
+    def _open_cell_file(self, row: int, _col: int):
+        """双击打开该行的输出文件/目录。"""
+        item = self.result_table.item(row, 2)
+        if item and item.text():
+            self._open_path(item.text())
+
+    def _open_path(self, path: str):
+        p = Path(path)
+        if sys.platform == "win32":
+            if p.exists():
+                os.startfile(str(p))  # type: ignore[attr-defined]
+            else:
+                os.startfile(str(p.parent))  # type: ignore[attr-defined]
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", str(p if p.exists() else p.parent)])
 
     def _on_all_done(self):
         self.start_btn.setEnabled(True)
@@ -276,16 +353,11 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "完成", "所有文件脱敏完成。")
 
     def _open_output_dir(self):
-        # 打开最后一个成功输出所在的目录
+        # 打开第一个有输出路径的目录
         for row in range(self.result_table.rowCount()):
             item = self.result_table.item(row, 2)
             if item and item.text():
-                d = str(Path(item.text()).parent)
-                if sys.platform == "win32":
-                    os.startfile(d)  # type: ignore[attr-defined]
-                else:
-                    import subprocess
-                    subprocess.Popen(["xdg-open", d])
+                self._open_path(item.text())
                 return
 
 

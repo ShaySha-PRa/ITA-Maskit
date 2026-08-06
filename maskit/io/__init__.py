@@ -103,3 +103,22 @@ def is_text_format(path) -> bool:
 def is_image_format(path) -> bool:
     """判断是否为图片格式（beta 裁剪脱敏）。"""
     return _ext(path) in {".png", ".jpg", ".jpeg"}
+
+
+def discover_files(path: str | Path) -> list[str]:
+    """发现待脱敏文件。
+
+    - 输入是文件 → 返回 [该文件]
+    - 输入是文件夹 → 递归扫描支持的扩展名（SUPPORTED_FORMATS）
+    - 支持的扩展名由 SUPPORTED_FORMATS 决定
+    """
+    p = Path(path)
+    if p.is_file():
+        return [str(p)]
+    if p.is_dir():
+        files = []
+        for f in sorted(p.rglob("*")):
+            if f.is_file() and f.suffix.lower() in SUPPORTED_FORMATS:
+                files.append(str(f))
+        return files
+    raise ValueError(f"路径不存在: {path}")

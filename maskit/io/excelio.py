@@ -55,10 +55,14 @@ def mask_excel_file(
         data = rows[1:]
         if not data:
             continue
+        # 关键：构造 DataFrame 前把所有值转成字符串。
+        # 真实 Excel 同一列常混合 datetime 值、空值、数字（如日期列 + 空行），
+        # 直接构造会导致 Polars 报 "could not append value: datetime[μs] ..."
+        data = [
+            ["" if v is None else str(v) for v in row]
+            for row in data
+        ]
         df = pl.DataFrame(data, schema=header, orient="row")
-        # 统一转成字符串列：避免 date/datetime 列（datetime[μs]）在脱敏/写回时
-        # 与字符串列类型冲突（真实 Excel 常有日期列）
-        df = df.with_columns([pl.col(c).cast(pl.Utf8) for c in df.columns])
         masked, _ = _mask_dataframe(df, ruleset, pepper)
         total += masked.height
         # 写回该 sheet
@@ -74,6 +78,6 @@ def _write_sheet(ws, header: list[str], df) -> None:
     ws.delete_rows(1, ws.max_row)
     # 写 header
     ws.append(header)
-    # 写数据（DataFrame 已全为字符串列）
+    # 写数据（DataFrame 全为字符串列，空值写成空串）
     for row in df.iter_rows():
-        ws.append(list(row))
+        ws.append(["" if v is None else str(v) for v in row])

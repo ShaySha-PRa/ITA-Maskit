@@ -31,7 +31,6 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from maskit.rules.loader import load_ruleset
 from maskit.stats import MaskStats
 
 # 支持的格式（显示用）
@@ -56,8 +55,10 @@ class MaskWorker(QThread):
 
     def run(self):
         from maskit.io import mask_file
+        from maskit.rules.user_rules import load_user_rules
 
-        ruleset = load_ruleset()
+        # 加载用户规则（含 GUI 编辑的自定义规则）；无则内置默认
+        ruleset = load_user_rules()
         total = len(self.files)
         for i, f in enumerate(self.files):
             src = Path(f)
@@ -156,6 +157,15 @@ class MainWindow(QMainWindow):
         options_row.addWidget(self.pepper_input, 1)
         layout.addLayout(options_row)
 
+        # 规则管理入口
+        rules_row = QHBoxLayout()
+        rules_btn = QPushButton("规则管理（可视化编辑）")
+        rules_btn.setStyleSheet("color: #2d6cdf; background: #eef3fd; padding: 4px 12px; border-radius: 4px;")
+        rules_btn.clicked.connect(self._open_rules_manager)
+        rules_row.addWidget(rules_btn)
+        rules_row.addStretch()
+        layout.addLayout(rules_row)
+
         # ③ 开始按钮
         self.start_btn = QPushButton("开始脱敏")
         self.start_btn.setStyleSheet(
@@ -197,6 +207,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.open_btn)
 
     # --- 交互 ---
+
+    def _open_rules_manager(self):
+        from maskit.gui_rules import RulesManagerDialog
+
+        dlg = RulesManagerDialog(self)
+        dlg.exec_()
 
     def _browse(self):
         files, _ = QFileDialog.getOpenFileNames(

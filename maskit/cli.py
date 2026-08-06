@@ -245,38 +245,13 @@ def _run_rules_generate(
 
 
 def _extract_doc_text(path: str) -> str:
-    """从规则要求文档提取文本（复用现有格式解析）。"""
-    from pathlib import Path
+    """从规则要求文档提取文本（复用 llm.extract_doc_text，异常转 UserError）。"""
+    from maskit.llm import extract_doc_text
 
-    ext = Path(path).suffix.lower()
     try:
-        if ext == ".pdf":
-            from maskit.io.pdfio import _read_pdf_text
-            return "\n".join(_read_pdf_text(Path(path)))
-        if ext == ".docx":
-            from docx import Document
-            doc = Document(path)
-            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        if ext in (".eml", ".msg"):
-            if ext == ".eml":
-                from email import policy
-                from email.parser import BytesParser
-                msg = BytesParser(policy=policy.default).parsebytes(Path(path).read_bytes())
-            else:
-                from extract_msg import Message
-                with Message(str(path)) as m:
-                    msg = m.asEmailMessage()
-            parts = []
-            for part in msg.walk():
-                if part.get_content_type() in ("text/plain", "text/html"):
-                    parts.append(part.get_payload(decode=True).decode("utf-8", "ignore"))
-            return "\n".join(parts)
-        # 纯文本
-        return Path(path).read_text(encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        raise UserError(f"文档不存在: {path}")
-    except Exception as exc:  # noqa: BLE001 — 文档解析失败统一转用户错误
-        raise UserError(f"无法读取文档 {path}: {exc}")
+        return extract_doc_text(path)
+    except ValueError as exc:
+        raise UserError(str(exc)) from exc
 
 
 @app.command()

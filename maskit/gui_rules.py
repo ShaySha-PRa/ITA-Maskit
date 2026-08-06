@@ -224,6 +224,26 @@ class RulesManagerDialog(QDialog):
         ai_row.addWidget(ai_btn)
         layout.addLayout(ai_row)
 
+        # 📄 上传敏感信息规定文档 → AI 生成规则
+        doc_row = QHBoxLayout()
+        doc_label = QLabel("📄 上传规定文档:")
+        self.doc_input = QLineEdit()
+        self.doc_input.setPlaceholderText("选敏感信息规定（如 2026 年敏感信息规则，PDF/Word/邮件/文本）")
+        doc_browse = QPushButton("浏览...")
+        doc_browse.clicked.connect(self._browse_doc)
+        doc_gen = QPushButton("解析生成")
+        doc_gen.setStyleSheet("background: #17a2b8; color: white; padding: 4px 12px; border-radius: 4px;")
+        doc_gen.clicked.connect(self._ai_generate_from_doc)
+        doc_row.addWidget(doc_label)
+        doc_row.addWidget(self.doc_input, 1)
+        doc_row.addWidget(doc_browse)
+        doc_row.addWidget(doc_gen)
+        layout.addLayout(doc_row)
+
+        ai_hint = QLabel("数据边界：只有规则要求/规定文档发给 AI，脱敏数据永不出本地。")
+        ai_hint.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(ai_hint)
+
         # 操作按钮
         btn_row = QHBoxLayout()
         add_btn = QPushButton("+ 新增规则")
@@ -414,18 +434,57 @@ class RulesManagerDialog(QDialog):
         return self.table.item(row, 0).text()
 
     def _ai_generate_rule(self):
-        """AI 生成规则：输入要求 → 调 LLM → 校验 → 存入当前规则集。
+        """AI 生成规则：输入一句话要求 → 调 LLM → 校验 → 存入当前规则集。
 
         数据边界：只有用户输入的描述发给 LLM，脱敏数据永不出本地。
         """
-
-        from maskit.llm import LLMClient, LLMConfig
-        from maskit.rules.user_rules import BUILTIN_RS
-
         request = self.ai_input.text().strip()
         if not request:
             QMessageBox.information(self, "提示", "请先输入规则要求，如「新增车牌号脱敏，保留省份和尾两位」。")
             return
+        self._run_ai_worker(request)
+
+    def _browse_doc(self):
+        """选择敏感信息规定文档（PDF/Word/邮件/文本）。"""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择敏感信息规定文档", "",
+            "文档 (*.pdf *.docx *.txt *.md *.eml *.msg);;所有文件 (*)",
+        )
+        if path:
+            self.doc_input.setText(path)
+
+    def _ai_generate_from_doc(self):
+        """上传敏感信息规定文档 → 提取文本 → AI 生成对应规则。
+
+        数据边界：只有规定文档的文本发给 LLM，脱敏数据永不出本地。
+        """
+        from pathlib import Path
+
+        from maskit.llm import extract_doc_text
+
+        path = self.doc_input.text().strip()
+        if not path:
+            QMessageBox.information(self, "提示", "请先「浏览...」选择敏感信息规定文档。")
+            return
+        try:
+            text = extract_doc_text(path)
+        except ValueError as exc:
+            QMessageBox.warning(self, "读取文档失败", str(exc))
+            return
+        if not text.strip():
+            QMessageBox.warning(self, "读取文档失败", "文档中没有可用的文本内容。")
+            return
+        # 长文档截断，避免 prompt 过大（DeepSeek 等 LLM 上下文有限）
+        MAX_CHARS = 50_000
+        truncated = len(text) > MAX_CHARS
+        if truncated:
+            text = text[:MAX_CHARS] + "\n\n（文档过长，已截取前 50,000 字符）"
+        self._run_ai_worker(text, source_label=Path(path).name + ("（截断）" if truncated else ""))
+
+    def _run_ai_worker(self, request: str, source_label: str = ""):
+        """共享 AI 生成流程：校验规则集/API → 后台调 LLM → 完成回调存入。"""
+        from maskit.llm import LLMClient, LLMConfig
+        from maskit.rules.user_rules import BUILTIN_RS
 
         # 当前规则集是内置默认 → 不能直接存，提示先新建/切换
         if self._current_rs_name() == BUILTIN_RS:
@@ -449,6 +508,7 @@ class RulesManagerDialog(QDialog):
 
         class _GenWorker(QThread):
             done = pyqtSignal(str, str)  # (yaml, error)
+
             def __init__(self, request, config):
                 super().__init__()
                 self.request = request
@@ -466,7 +526,11 @@ class RulesManagerDialog(QDialog):
         self._gen_worker.done.connect(
             lambda yaml_text, err: self._on_ai_done(yaml_text, err)
         )
-        QMessageBox.information(self, "AI 生成中", "正在调用 AI 生成规则，请稍候...")
+        tip = (
+            f"正在解析「{source_label}」并生成规则，请稍候..." if source_label
+            else "正在调用 AI 生成规则，请稍候..."
+        )
+        QMessageBox.information(self, "AI 生成中", tip)
         self._gen_worker.start()
 
     def _on_ai_done(self, yaml_text: str, err: str):

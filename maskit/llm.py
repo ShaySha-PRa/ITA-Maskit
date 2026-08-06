@@ -142,3 +142,48 @@ class LLMClient:
         """生成规则 YAML 文本。"""
         prompt = build_rules_prompt(user_request)
         return self.chat(prompt)
+
+
+def extract_doc_text(path: str) -> str:
+    """从规则要求文档提取文本（PDF/Word/邮件/纯文本）。
+
+    GUI 与 CLI 共用：审计人员上传「敏感信息规定」文档（如 2026 年敏感信息规则），
+    提取全文作为 LLM 规则生成的输入。
+
+    数据边界：只读取用户主动提供的文档文本；脱敏数据永不进入。
+    """
+    from pathlib import Path
+
+    ext = Path(path).suffix.lower()
+    try:
+        if ext == ".pdf":
+            from maskit.io.pdfio import _read_pdf_text
+
+            return "\n".join(_read_pdf_text(Path(path)))
+        if ext == ".docx":
+            from docx import Document
+
+            doc = Document(path)
+            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        if ext in (".eml", ".msg"):
+            if ext == ".eml":
+                from email import policy
+                from email.parser import BytesParser
+
+                msg = BytesParser(policy=policy.default).parsebytes(Path(path).read_bytes())
+            else:
+                from extract_msg import Message
+
+                with Message(str(path)) as m:
+                    msg = m.asEmailMessage()
+            parts = []
+            for part in msg.walk():
+                if part.get_content_type() in ("text/plain", "text/html"):
+                    parts.append(part.get_payload(decode=True).decode("utf-8", "ignore"))
+            return "\n".join(parts)
+        # 纯文本
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        raise ValueError(f"文档不存在: {path}") from None
+    except Exception as exc:  # noqa: BLE001 — 文档解析失败统一转用户错误
+        raise ValueError(f"无法读取文档 {path}: {exc}") from exc

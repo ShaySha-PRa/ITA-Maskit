@@ -455,10 +455,22 @@ class RulesManagerDialog(QDialog):
         # 存入当前规则集（RuleDef → dict，用 dataclasses.asdict 保留全部字段）
         from dataclasses import asdict
 
+        from maskit.rules.user_rules import BUILTIN_RS, save_ruleset
+
+        current = self._current_rs_name()
+        if current == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "内置默认规则集不可修改，请先「新建」一套规则集。")
+            return
         for name, rule in rs.defs.items():
             self.defs[name] = {k: v for k, v in asdict(rule).items() if v}
+        # 保存到当前规则集文件，列表（读文件）即可看到
+        try:
+            save_ruleset(current, self.defs)
+        except ValueError as exc:
+            QMessageBox.warning(self, "保存失败", str(exc))
+            return
         self._refresh_table()
-        QMessageBox.information(self, "已添加", f"AI 已生成 {len(new_rules)} 条规则。\n点「保存当前规则集」生效。")
+        QMessageBox.information(self, "已添加", f"AI 已生成 {len(new_rules)} 条规则，已保存到规则集「{current}」。")
 
     def _add_rule(self):
         dlg = RuleEditDialog(self)

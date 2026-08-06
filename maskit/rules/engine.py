@@ -19,6 +19,14 @@ from maskit.normalize import normalize_default
 from maskit.rules.defs import NORMALIZERS, RuleDef, RuleSet
 
 
+def _strip_anchors(pattern: str) -> str:
+    """去掉 ^ 和 $ 锚点，使规则正则可在值内匹配。"""
+    p = pattern
+    p = p.removeprefix("^")
+    p = p.removesuffix("$")
+    return p
+
+
 def _domain_key(pepper: str, domain: str) -> bytes:
     """Domain separation：从同一 pepper 派生不同用途的 HMAC key。"""
     return hmac.new(
@@ -165,19 +173,76 @@ def _apply_single_count(
     return {"masked_value": out, "changed": 1 if out != value else 0}
 
 
+# 值级检测白名单：只对这些「强特征」规则做整值检测。
+# 弱特征规则（app_version/account/employee_id/phone）误伤率高
+# （会匹配 2.5/2024.1.1 等日期小数），排除。
+_VALUE_SCAN_RULES = {"email", "ip", "id_card"}
+
+
+def _build_value_scan_regexes(ruleset: RuleSet) -> list[tuple[RuleDef, re.Pattern]]:
+    """构建值级检测正则（仅强特征白名单规则）。
+
+    用**原始带锚点**的正则做整值匹配——值必须整体匹配规则，
+    避免 app_version 等把「2024.1.1」当版本号、phone 把日期当手机号。
+    """
+    compiled = []
+    for d in ruleset.defs.values():
+        if d.name not in _VALUE_SCAN_RULES:
+            continue
+        if d.text_scanable and not d.default_disabled:
+            try:
+                compiled.append((d, re.compile(d.match)))
+            except re.error:
+                continue
+    return compiled
+
+
+def _value_scan_single(
+    value: str,
+    regexes: list[tuple[RuleDef, re.Pattern]],
+    strategy: str,
+    pepper: str | None,
+) -> dict:
+    """值级检测：值**整体**命中某敏感正则 → 用该规则脱敏。
+
+    一个值命中多个规则 → 取正则最长的（更具体优先）。
+    返回 {"masked_value", "changed"}，与 _apply_single_count 一致。
+    """
+    v = value if value is not None else ""
+    if not v.strip():
+        return {"masked_value": "", "changed": 0}
+    # 公式保护：Excel 公式（=SUM...）不做值检测
+    if v.strip().startswith("="):
+        return {"masked_value": value, "changed": 0}
+    # 找命中的规则（最长正则优先）
+    best = None
+    best_len = -1
+    for d, regex in regexes:
+        if regex.fullmatch(v.strip()) and len(d.match) > best_len:
+            best = d
+            best_len = len(d.match)
+    if best is None:
+        return {"masked_value": value, "changed": 0}
+    out = _apply_single(best, v.strip(), strategy, pepper)
+    return {"masked_value": out, "changed": 1 if out != v.strip() else 0}
+
+
 def apply_rules(
     df: pl.DataFrame,
     ruleset: RuleSet,
     pepper: str | None,
+    value_scan: bool = True,
 ) -> tuple[pl.DataFrame, int]:
     """对 DataFrame 应用规则集，返回 (脱敏后 DataFrame, 脱敏单元格数)。
 
     - 映射列按规则/策略处理
-    - 未映射列原样透传
+    - 未映射列：value_scan=True 时做值级检测（身份证/手机/邮箱等强正则），
+      命中即脱敏（补列名漏检）
     - null 保持 null
     """
     out = df
     total_masked = 0
+    matched_cols = set()
     for spec in ruleset.specs:
         if spec.column not in out.columns:
             raise ValueError(f"规则引用了不存在的列: {spec.column!r}")
@@ -187,6 +252,7 @@ def apply_rules(
         if rule.default_disabled:
             raise ValueError(f"规则 {spec.rule!r} 默认关闭，请在 YAML 中显式启用")
 
+        matched_cols.add(spec.column)
         col = pl.col(spec.column).cast(pl.Utf8)
         # map_elements 返回 dict {masked_value, changed}，拆出值列 + 计数列
         result = col.map_elements(
@@ -202,6 +268,28 @@ def apply_rules(
         )
         total_masked += int(out["__changed"].sum())
         out = out.drop("__changed")
+
+    # 值级检测：未匹配列的值跑敏感正则（补列名漏检）
+    if value_scan:
+        regexes = _build_value_scan_regexes(ruleset)
+        if regexes:
+            for col_name in out.columns:
+                if col_name in matched_cols:
+                    continue  # 已匹配列不重复
+                col = pl.col(col_name).cast(pl.Utf8)
+                result = col.map_elements(
+                    lambda v, rx=regexes, p=pepper: _value_scan_single(
+                        v if v is not None else "", rx, "mask", p
+                    ),
+                    return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
+                ).alias("__vs_result")
+                out = out.with_columns(
+                    result.struct.field("masked_value").alias(col_name),
+                    result.struct.field("changed").alias("__vs_changed"),
+                )
+                total_masked += int(out["__vs_changed"].sum())
+                out = out.drop("__vs_changed")
+
     return out, total_masked
 
 

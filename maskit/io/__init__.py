@@ -122,3 +122,47 @@ def discover_files(path: str | Path) -> list[str]:
                 files.append(str(f))
         return files
     raise ValueError(f"路径不存在: {path}")
+
+
+def validate_files(paths: list[str]) -> tuple[list[str], list[dict]]:
+    """校验文件列表（GUI 防传错用）。
+
+    返回 (有效文件, 无效文件信息[{path, reason}])。
+    - 不存在的路径 → 无效
+    - 文件扩展名不在 SUPPORTED_FORMATS → 无效
+    - 文件夹 → 用 discover_files 展开（有效文件加入）
+    """
+    valid: list[str] = []
+    invalid: list[dict] = []
+    for p in paths:
+        path = Path(p)
+        if not path.exists():
+            invalid.append({"path": p, "reason": "路径不存在"})
+            continue
+        if path.is_dir():
+            try:
+                valid.extend(discover_files(p))
+            except ValueError as exc:
+                invalid.append({"path": p, "reason": str(exc)})
+            continue
+        if path.is_file():
+            if path.suffix.lower() in SUPPORTED_FORMATS:
+                valid.append(str(path))
+            else:
+                invalid.append({"path": p, "reason": f"不支持的文件类型 {path.suffix}"})
+    return valid, invalid
+
+
+def default_output_path(input_path: str, output_dir: str | None = None) -> str:
+    """生成输出路径。
+
+    - output_dir 指定 → 输出到该目录（同名 + _masked 后缀）
+    - 未指定 → 输入同目录（当前行为）
+    """
+    src = Path(input_path)
+    out_name = src.stem + "_masked" + src.suffix
+    if output_dir:
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return str(out_dir / out_name)
+    return str(src.with_name(out_name))

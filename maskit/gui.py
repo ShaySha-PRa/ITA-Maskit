@@ -45,21 +45,22 @@ class MaskWorker(QThread):
 
     progress = pyqtSignal(int, int, int)   # (已处理文件, 总文件, 当前文件进度0-100)
     stats = pyqtSignal(int, int)           # (处理数据数, 脱敏数据数)
-    finished_file = pyqtSignal(str, str, str)  # (文件名, 状态, 输出路径)
+    finished_file = pyqtSignal(int, str, str, str)  # (文件索引, 文件名, 状态, 输出路径)
     all_done = pyqtSignal()
 
     def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
-                 ruleset_name: str | None = None):
+                 ruleset_name: str | None = None, output_dir: str | None = None):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
         self.strategy = strategy
         self.pepper = pepper
         self.ruleset_name = ruleset_name
+        self.output_dir = output_dir
         self.total_stats = MaskStats()
 
     def run(self):
-        from maskit.io import mask_file
+        from maskit.io import default_output_path, mask_file
         from maskit.rules.user_rules import get_current_ruleset, load_ruleset
 
         # 加载选中的规则集（主界面下拉）；缺省用当前规则集
@@ -68,7 +69,7 @@ class MaskWorker(QThread):
         total = len(self.files)
         for i, f in enumerate(self.files):
             src = Path(f)
-            out = src.with_name(src.stem + "_masked" + src.suffix)
+            out = default_output_path(f, self.output_dir)
             try:
                 details = {}
                 mask_file(
@@ -86,9 +87,9 @@ class MaskWorker(QThread):
                     if masked_sheets:
                         info += f", {len(masked_sheets)} sheets含脱敏"
                     info += ")"
-                self.finished_file.emit(info, "成功", str(out))
+                self.finished_file.emit(i, info, "成功", str(out))
             except Exception as exc:  # noqa: BLE001 — GUI 层捕获所有异常显示在结果列表
-                self.finished_file.emit(src.name, f"失败: {exc}", "")
+                self.finished_file.emit(i, src.name, f"失败: {exc}", "")
             self.progress.emit(i + 1, total, 100 if i == total - 1 else int((i + 1) / total * 100))
         self.all_done.emit()
 
@@ -145,16 +146,40 @@ class MainWindow(QMainWindow):
         file_row = QHBoxLayout()
         self.file_label = QLabel("未选择文件")
         self.file_label.setStyleSheet("color: #666;")
-        browse_btn = QPushButton("浏览文件...")
+        browse_btn = QPushButton("浏览文件/文件夹...")
         browse_btn.clicked.connect(self._browse)
+        clear_btn = QPushButton("清空")
+        clear_btn.clicked.connect(self._clear_files)
         file_row.addWidget(self.file_label, 1)
         file_row.addWidget(browse_btn)
+        file_row.addWidget(clear_btn)
         layout.addLayout(file_row)
 
         # 拖拽区域
         self.drop_area = DropArea()
-        self.drop_area.files_dropped.connect(self._set_files)
+        self.drop_area.files_dropped.connect(self._add_files)
         layout.addWidget(self.drop_area)
+
+        # 文件列表（多文件预览 + 勾选 + 状态）
+        self.file_table = QTableWidget(0, 3)
+        self.file_table.setHorizontalHeaderLabels(["文件名", "状态", "大小"])
+        self.file_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.file_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.file_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.file_table.setMinimumHeight(120)
+        layout.addWidget(self.file_table, 1)
+
+        # 产出目录
+        out_row = QHBoxLayout()
+        out_label = QLabel("输出到:")
+        self.out_input = QLineEdit()
+        self.out_input.setPlaceholderText("留空 = 与原文件同目录")
+        out_browse = QPushButton("浏览...")
+        out_browse.clicked.connect(self._browse_output_dir)
+        out_row.addWidget(out_label)
+        out_row.addWidget(self.out_input, 1)
+        out_row.addWidget(out_browse)
+        layout.addLayout(out_row)
 
         # ② 选项
         options_row = QHBoxLayout()
@@ -248,17 +273,59 @@ class MainWindow(QMainWindow):
         dlg.exec_()
 
     def _browse(self):
+
         files, _ = QFileDialog.getOpenFileNames(
             self, "选择要脱敏的文件",
             "",
             "数据文件 (*.csv *.xlsx *.xls *.json *.jsonl *.ndjson *.eml *.msg *.pdf *.docx *.png *.jpg *.jpeg)",
         )
         if files:
-            self._set_files(files)
+            self._add_files(files)
 
-    def _set_files(self, files: list[str]):
-        self.files = files
-        self.file_label.setText(f"已选 {len(files)} 个文件: {Path(files[0]).name}" + (" 等" if len(files) > 1 else ""))
+    def _add_files(self, paths: list[str]):
+        """加入文件：校验防传错 → 填充文件列表。"""
+        from maskit.io import validate_files
+
+        valid, invalid = validate_files(paths)
+        # 防传错提示
+        if invalid:
+            QMessageBox.warning(
+                self, "部分文件无法处理",
+                f"已忽略 {len(invalid)} 个文件：\n" + "\n".join(
+                    f"  {Path(i['path']).name}: {i['reason']}" for i in invalid[:5]
+                ) + ("\n  ..." if len(invalid) > 5 else ""),
+            )
+        # 去重加入
+        for f in valid:
+            if f not in self.files:
+                self.files.append(f)
+        self._refresh_file_table()
+
+    def _refresh_file_table(self):
+        """刷新文件列表表格。"""
+        import os as _os
+
+        self.file_table.setRowCount(len(self.files))
+        for r, f in enumerate(self.files):
+            name_item = QTableWidgetItem(Path(f).name)
+            name_item.setToolTip(f)
+            status_item = QTableWidgetItem("待处理")
+            size = _os.path.getsize(f) if _os.path.isfile(f) else 0
+            size_item = QTableWidgetItem(f"{size/1024:.0f} KB" if size >= 1024 else f"{size} B")
+            self.file_table.setItem(r, 0, name_item)
+            self.file_table.setItem(r, 1, status_item)
+            self.file_table.setItem(r, 2, size_item)
+        self.file_label.setText(f"已选 {len(self.files)} 个文件")
+
+    def _clear_files(self):
+        self.files = []
+        self.file_table.setRowCount(0)
+        self.file_label.setText("未选择文件")
+
+    def _browse_output_dir(self):
+        d = QFileDialog.getExistingDirectory(self, "选择输出目录")
+        if d:
+            self.out_input.setText(d)
 
     def _reload_rulesets(self):
         """刷新规则集下拉，默认选中当前规则集。"""
@@ -284,16 +351,20 @@ class MainWindow(QMainWindow):
         strategy = "pseudo" if self.pseudo_cb.isChecked() else "mask"
         pepper = self.pepper_input.text() if self.pseudo_cb.isChecked() else None
         ruleset_name = self.rs_combo.currentText() if hasattr(self, "rs_combo") else None
+        output_dir = self.out_input.text().strip() or None
 
         self.start_btn.setEnabled(False)
         self.result_table.setRowCount(0)
         self.processed_label.setText("处理数据: 0")
         self.masked_label.setText("脱敏数据: 0")
         self.progress_bar.setValue(0)
+        # 文件列表状态重置为待处理
+        for r in range(self.file_table.rowCount()):
+            self.file_table.item(r, 1).setText("待处理")
 
         self.worker = MaskWorker(
             self.files, self.scan_names_cb.isChecked(), strategy, pepper,
-            ruleset_name=ruleset_name,
+            ruleset_name=ruleset_name, output_dir=output_dir,
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.stats.connect(self._on_stats)
@@ -311,7 +382,11 @@ class MainWindow(QMainWindow):
         self.processed_label.setText(f"处理数据: {processed:,}")
         self.masked_label.setText(f"脱敏数据: {masked:,}")
 
-    def _on_file_done(self, name: str, status: str, out: str):
+    def _on_file_done(self, idx: int, name: str, status: str, out: str):
+        # 更新文件列表状态
+        if 0 <= idx < self.file_table.rowCount():
+            self.file_table.item(idx, 1).setText(status)
+        # 更新结果表
         row = self.result_table.rowCount()
         self.result_table.insertRow(row)
         name_item = QTableWidgetItem(name)

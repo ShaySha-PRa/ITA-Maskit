@@ -26,3 +26,7 @@ htmlcov/
 
 # Audit log
 .maskit/
+
+# Personal Claude Code instructions (not for distribution)
+CLAUDE.md
+.claude/

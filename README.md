@@ -63,17 +63,37 @@ maskit audit
 
 ## Windows 桌面 GUI
 
-面向**不懂代码的 IT 审计人员**。拖拽/选择文件 → 点「开始脱敏」→ 实时查看处理/脱敏/进度 → 打开结果文件夹。
+面向**不懂代码的 IT 审计人员**。拖拽/选择文件 → 点「预验证」看命中 → 点「开始脱敏」→ 实时查看处理/脱敏/进度 → 打开结果文件夹。
+
+### 方式一：直接运行源码（开发/试用）
 
 ```bash
-# 启动 GUI
-pip install -e ".[gui]"
-python -m maskit.gui_app
-
-# 打包成 Windows 可执行文件（PyInstaller）
-powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-# 产出 dist/ITA-Maskit.exe，双击即用（无需装 Python）
+git clone git@github.com:ShaySha-PRa/ITA-Maskit.git
+cd ITA-Maskit
+pip install -e ".[gui,image,llm]"   # 全部依赖（CLI + GUI + 图片 + LLM 规则生成）
+python -m maskit.gui_app            # 启动 GUI
+# 或用 CLI：maskit mask data.csv --pepper <密钥>
 ```
+
+### 方式二：打包成 Windows exe（PyInstaller，单文件双击即用）
+
+在 **Windows** 上（已装 Python 3.10+）：
+
+```bash
+git clone git@github.com:ShaySha-PRa/ITA-Maskit.git
+cd ITA-Maskit
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+# 自动安装依赖 → 打包 → 产出 dist/ITA-Maskit.exe（无需装 Python 即可分发）
+```
+
+### 方式三：直接下载 exe（无需自己打包）
+
+仓库 GitHub Actions 在每次 push 到 main 时自动构建 exe：
+GitHub → Actions → 最新一次运行 → **Artifacts** → 下载 `ITA-Maskit-exe`，解压即得 `ITA-Maskit.exe`。
+
+> **exe 注意**：
+> - 图片脱敏（beta）需额外安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) + 中文语言包（exe 未内置）
+> - AI 规则生成需设置环境变量 `MASKIT_LLM_API_KEY`
 
 **GUI 功能**：
 - 拖拽/浏览选择文件（支持多文件批量）
@@ -82,6 +102,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 - 结果列表：文件名/状态/输出路径，一键打开结果文件夹
 - 异步处理：大文件不冻结界面
 - 规则管理（可视化编辑，描述代替正则）：规则集新建/切换/导入导出、人员清单全覆盖脱敏
+- **预验证**：正式脱敏前预览哪些列会被脱敏、命中多少、改了什么样例，未命中列黄标提示（不产出文件）
 - **AI 生成规则**：一句话描述 **或** 上传敏感信息规定文档（如 2026 年敏感信息规则，PDF/Word/邮件/文本）→ AI 解析并自动生成对应规则（只发规定/描述，脱敏数据永不出本地）
 
 **性能消耗**（普通办公电脑 4-8GB 内存可流畅运行）：

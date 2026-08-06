@@ -78,6 +78,12 @@ class MaskWorker(QThread):
                     details=details,
                 )
                 self.total_stats.files += 1
+                # 累加处理/脱敏数据（各格式从 details 提供）
+                self.total_stats.add(
+                    processed=details.get("processed", 0),
+                    masked=details.get("masked", 0),
+                )
+                self.stats.emit(self.total_stats.processed, self.total_stats.masked)
                 # Excel 多 sheet：显示各 sheet 处理信息
                 info = src.name
                 sheets = details.get("sheets")

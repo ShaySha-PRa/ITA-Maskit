@@ -17,8 +17,12 @@ def mask_json_file(
     output_path: str | Path,
     ruleset: RuleSet,
     pepper: str | None,
+    details: dict | None = None,
 ) -> int:
-    """脱敏 JSON / JSONL → JSONL，返回处理行数。"""
+    """脱敏 JSON / JSONL → JSONL，返回处理行数。
+
+    details（可选）：记录 masked 数。
+    """
     src = Path(input_path)
     dst = Path(output_path)
     if not src.exists():
@@ -42,9 +46,12 @@ def mask_json_file(
     if df.height == 0:
         raise ValueError(f"JSON 文件无数据: {src}")
 
-    masked, _ = _mask_dataframe(df, ruleset, pepper)
+    masked, masked_count = _mask_dataframe(df, ruleset, pepper)
     if masked.height == 0:
         raise ValueError(f"JSON 文件无数据: {src}")
 
     masked.write_ndjson(dst)
+    if details is not None:
+        details["masked"] = masked_count
+        details["processed"] = masked.height
     return masked.height

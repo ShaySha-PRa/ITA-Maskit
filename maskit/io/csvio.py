@@ -54,8 +54,12 @@ def mask_csv_file(
     ruleset: RuleSet,
     pepper: str | None,
     encoding: str = "utf-8",
+    details: dict | None = None,
 ) -> int:
-    """脱敏 CSV → CSV，返回处理行数。"""
+    """脱敏 CSV → CSV，返回处理行数。
+
+    details（可选）：记录 masked 数（脱敏单元格数）。
+    """
     src = Path(input_path)
     dst = Path(output_path)
     if not src.exists():
@@ -83,10 +87,13 @@ def mask_csv_file(
     if df.height == 0:
         raise ValueError(f"输入文件无数据: {src}")
 
-    masked_df, _ = _mask_dataframe(df, ruleset, pepper)
+    masked_df, masked_count = _mask_dataframe(df, ruleset, pepper)
     if masked_df.height == 0:
         raise ValueError(f"输入文件无数据: {src}")
 
     masked_df.write_csv(dst)
+    if details is not None:
+        details["masked"] = masked_count
+        details["processed"] = masked_df.height
     return masked_df.height
 

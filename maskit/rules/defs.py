@@ -29,6 +29,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "N-{hash:8}",
         "normalize": "default",
         "text_scanable": False,  # 无法在文本流中区分名字
+        "keywords": ["姓名", "名字", "name", "applicant", "员工", "人员", "签约", "nickname", "昵称"],
     },
     "email": {
         "version": DEFAULT_VERSION,
@@ -37,6 +38,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "p{hash:8}@masked.local",
         "normalize": "lower",
         "text_scanable": True,
+        "keywords": ["邮箱", "邮件", "email", "mail", "e-mail", "电邮"],
     },
     "ip": {
         "version": DEFAULT_VERSION,
@@ -45,6 +47,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "IP-{hash:8}",
         "normalize": "none",
         "text_scanable": True,
+        "keywords": ["ip地址", "ip", "地址"],
     },
     "phone": {
         "version": DEFAULT_VERSION,
@@ -53,6 +56,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "{digits}",  # 确定性数字，由 HMAC 派生
         "normalize": "phone",
         "text_scanable": True,
+        "keywords": ["手机", "电话", "phone", "mobile", "tel", "联系", "联系电话"],
     },
     "employee_id": {
         "version": DEFAULT_VERSION,
@@ -61,6 +65,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "{prefix}-{hash:8}",
         "normalize": "upper",
         "text_scanable": True,
+        "keywords": ["工号", "员工编号", "员工id", "员工号", "employee_id", "编号", "工牌"],
     },
     "account": {
         "version": DEFAULT_VERSION,
@@ -69,6 +74,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "A-{hash:8}",
         "normalize": "default",
         "text_scanable": False,  # 纯字母数字无边界，易误伤普通单词
+        "keywords": ["账号", "账户", "account", "username", "登录名", "login"],
     },
     "company": {
         "version": DEFAULT_VERSION,
@@ -77,6 +83,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "C-{hash:8}",
         "normalize": "default",
         "text_scanable": False,  # 无法在文本流中区分公司名
+        "keywords": ["公司", "签约主体", "主体", "vendor", "company", "企业", "单位", "甲方"],
     },
     "app_version": {
         "version": DEFAULT_VERSION,
@@ -85,6 +92,16 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "V-{hash:8}",
         "normalize": "lower",
         "text_scanable": True,
+        "keywords": ["版本", "version", "软件版本", "app_version"],
+    },
+    "id_card": {
+        "version": DEFAULT_VERSION,
+        "match": r"^\d{17}[\dXx]$",  # 18 位身份证号（末位可为 X）
+        "mask": "{head:6}**********{tail:4}",  # 保留前6后4，中间10位隐藏
+        "pseudo": "ID-{hash:8}",
+        "normalize": "upper",
+        "text_scanable": True,
+        "keywords": ["身份证", "证件号", "id_card", "idcard", "idnumber", "证件号码", "身份证号"],
     },
     # 合规敏感，默认关闭（需在 YAML 显式启用）
     "ssn": {
@@ -150,6 +167,7 @@ class RuleDef:
     normalize: str = "default"
     default_disabled: bool = False
     text_scanable: bool = False  # 是否可用于文本流 PII 扫描
+    keywords: list[str] = field(default_factory=list)  # 列名自动匹配语义关键词
 
     @property
     def regex(self) -> re.Pattern:

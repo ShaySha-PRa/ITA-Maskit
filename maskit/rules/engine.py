@@ -76,7 +76,21 @@ def render_template(template: str, value: str, pepper: str | None) -> str:
     if "{tail:4}" in template:
         template = template.replace("{tail:4}", value[-4:] if len(value) >= 4 else value)
 
-    if "{head:3}" in template:
+    # 通用 {head:N} / {tail:N}（任意 N）
+    import re as _re
+
+    def _head_repl(m: re.Match) -> str:
+        n = int(m.group(1))
+        return value[:n] if len(value) >= n else value
+
+    def _tail_repl(m: re.Match) -> str:
+        n = int(m.group(1))
+        return value[-n:] if len(value) >= n else value
+
+    template = _re.sub(r"\{head:(\d+)\}", _head_repl, template)
+    template = _re.sub(r"\{tail:(\d+)\}", _tail_repl, template)
+
+    if "{head:3}" in template:  # 兼容旧模板（通用正则已处理，此处兜底）
         template = template.replace("{head:3}", value[:3] if len(value) >= 3 else value)
 
     # {prefix}/{suffix}：按非字母数字分隔段切分

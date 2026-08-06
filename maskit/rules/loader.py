@@ -39,6 +39,7 @@ def _build_rule_def(name: str, raw: dict[str, Any]) -> RuleDef:
         normalize=raw.get("normalize", "default"),
         default_disabled=bool(raw.get("default_disabled", False)),
         text_scanable=bool(raw.get("text_scanable", False)),
+        keywords=list(raw.get("keywords", [])),
     )
 
 
@@ -70,17 +71,15 @@ def _build_ruleset_from_data(data: dict, *, optional_specs: bool = False) -> Rul
 def load_ruleset(yaml_path: str | Path | None = None) -> RuleSet:
     """加载规则集。
 
-    无 yaml_path → 用内置定义 + 默认列映射（全部 mask）。
+    无 yaml_path → 内置定义 + 默认列映射（全部 mask）。
     有 yaml_path → 内置定义为基础，YAML 的 rule_defs 覆盖/新增；
                    rules 段做列映射。
     """
     if yaml_path is None:
-        # 默认规则集：对存在的敏感列脱敏（optional=True，缺列静默跳过）
+        # 默认规则集：用内置定义 + 默认列映射（缺列静默跳过）
+        defs = {name: _build_rule_def(name, raw) for name, raw in BUILTIN_RULE_DEFS.items()}
         specs = [RuleSpec(**m, optional=True) for m in DEFAULT_MAPPING]
-        return RuleSet(
-            defs={name: _build_rule_def(name, raw) for name, raw in BUILTIN_RULE_DEFS.items()},
-            specs=specs,
-        )
+        return RuleSet(defs=defs, specs=specs)
     else:
         path = Path(yaml_path)
         if not path.exists():
@@ -90,6 +89,28 @@ def load_ruleset(yaml_path: str | Path | None = None) -> RuleSet:
         except yaml.YAMLError as exc:
             raise ValueError(f"规则文件 YAML 解析失败: {path} ({exc})") from exc
         return _build_ruleset_from_data(data)
+
+
+def load_ruleset_for_columns(
+    columns: list[str],
+    base_ruleset: RuleSet | None = None,
+    prefer_auto: bool = False,
+) -> RuleSet:
+    """为指定列名加载规则集：自动匹配列名到规则。
+
+    - 默认（无 rules 时）：用 auto_match_columns 自动匹配
+    - base_ruleset 提供规则定义（含内置 + 自定义）
+    - prefer_auto=False 且 base_ruleset 有显式 specs 时 → 用显式 specs
+      （用户 --rules 显式映射优先）
+    """
+    base = base_ruleset or load_ruleset()
+    # 若已有显式列映射且不强制自动 → 用显式
+    if base.specs and not prefer_auto:
+        return base
+    from maskit.rules.matcher import auto_match_columns
+
+    specs = auto_match_columns(columns)
+    return RuleSet(defs=base.defs, specs=specs)
 
 
 def load_ruleset_from_string(yaml_text: str) -> RuleSet:

@@ -88,10 +88,10 @@ def test_ruleset_version_tracks_defs():
     assert rs1.version == rs2.version  # 同定义同版本
 
 
-def test_rules_list_has_10():
-    """rules list 显示 10 条（8 默认 + 2 默认关闭）。"""
+def test_rules_list_has_11():
+    """rules list 显示 11 条（9 默认 + 2 默认关闭）。"""
     rules = list_rules()
-    assert len(rules) == 10
+    assert len(rules) == 11
     disabled = [r for r in rules if r["default_disabled"]]
     assert len(disabled) == 2  # ssn, credit_card
 

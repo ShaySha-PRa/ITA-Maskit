@@ -7,10 +7,13 @@ from __future__ import annotations
 
 from PyQt5.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -21,10 +24,8 @@ from PyQt5.QtWidgets import (
 )
 
 from maskit.rules.user_rules import (
-    delete_user_rules,
     get_rule_defs,
     rules_for_gui,
-    save_user_rules,
     user_rules_path,
 )
 
@@ -116,21 +117,48 @@ class RuleEditDialog(QDialog):
 
 
 class RulesManagerDialog(QDialog):
-    """规则管理窗口：列表 + 编辑/新增/删除 + 保存。"""
+    """规则管理窗口：规则集切换 + 列表 + 编辑/新增/删除 + 导入导出。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("规则管理")
-        self.resize(720, 480)
-        self.defs = get_rule_defs()
+        self.resize(760, 520)
+        self._reload_defs()
         self.builtin_names = {"name", "email", "ip", "phone", "employee_id",
                               "account", "company", "app_version", "id_card", "bank_card"}
 
         layout = QVBoxLayout(self)
 
-        # 标题
-        title = QLabel(f"规则可视化编辑（保存到 {user_rules_path()}）")
-        title.setStyleSheet("font-weight: bold;")
+        # 规则集区
+        rs_row = QHBoxLayout()
+        rs_label = QLabel("当前规则集:")
+        self.rs_combo = QComboBox()
+        self._reload_rs_combo()
+        self.rs_combo.currentTextChanged.connect(self._on_rs_changed)
+        new_btn = QPushButton("新建")
+        saveas_btn = QPushButton("另存为")
+        import_btn = QPushButton("导入")
+        export_btn = QPushButton("导出")
+        del_btn = QPushButton("删除")
+        builtin_btn = QPushButton("内置默认")
+        new_btn.clicked.connect(self._new_ruleset)
+        saveas_btn.clicked.connect(self._save_as)
+        import_btn.clicked.connect(self._import_ruleset)
+        export_btn.clicked.connect(self._export_ruleset)
+        del_btn.clicked.connect(self._delete_ruleset)
+        builtin_btn.clicked.connect(lambda: self._switch_to("内置默认"))
+        rs_row.addWidget(rs_label)
+        rs_row.addWidget(self.rs_combo, 1)
+        rs_row.addWidget(new_btn)
+        rs_row.addWidget(saveas_btn)
+        rs_row.addWidget(import_btn)
+        rs_row.addWidget(export_btn)
+        rs_row.addWidget(del_btn)
+        rs_row.addWidget(builtin_btn)
+        layout.addLayout(rs_row)
+
+        title = QLabel(f"规则集目录: {user_rules_path()}")
+        title.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(title)
 
         # 规则表格
@@ -154,22 +182,145 @@ class RulesManagerDialog(QDialog):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        # 底部：保存 / 恢复默认 / 关闭
+        # 底部：保存当前规则集 / 关闭
         bottom = QHBoxLayout()
-        save_btn = QPushButton("保存到用户规则")
+        save_btn = QPushButton("保存当前规则集")
         save_btn.setStyleSheet("background: #2d6cdf; color: white; padding: 6px; border-radius: 4px;")
-        reset_btn = QPushButton("恢复内置默认")
         close_btn = QPushButton("关闭")
         save_btn.clicked.connect(self._save)
-        reset_btn.clicked.connect(self._reset)
         close_btn.clicked.connect(self.reject)
         bottom.addWidget(save_btn)
-        bottom.addWidget(reset_btn)
         bottom.addStretch()
         bottom.addWidget(close_btn)
         layout.addLayout(bottom)
 
         self._refresh_table()
+
+    # --- 规则集 ---
+
+    def _reload_defs(self):
+        """加载当前规则集的完整定义。"""
+
+        self.defs = get_rule_defs()
+
+    def _reload_rs_combo(self):
+        """刷新规则集下拉，保持当前选中。"""
+        from maskit.rules.user_rules import get_current_ruleset, list_rulesets
+
+        self.rs_combo.blockSignals(True)
+        self.rs_combo.clear()
+        self.rs_combo.addItems(list_rulesets())
+        current = get_current_ruleset()
+        idx = self.rs_combo.findText(current)
+        if idx >= 0:
+            self.rs_combo.setCurrentIndex(idx)
+        self.rs_combo.blockSignals(False)
+
+    def _on_rs_changed(self, name: str):
+        """切换规则集 → 重载定义 + 刷新列表。"""
+        from maskit.rules.user_rules import set_current_ruleset
+
+        if name:
+            try:
+                set_current_ruleset(name)
+            except ValueError:
+                pass
+            self._reload_defs()
+            self._refresh_table()
+
+    def _switch_to(self, name: str):
+        from maskit.rules.user_rules import set_current_ruleset
+
+        try:
+            set_current_ruleset(name)
+        except ValueError as exc:
+            QMessageBox.warning(self, "提示", str(exc))
+            return
+        self._reload_rs_combo()
+        self._reload_defs()
+        self._refresh_table()
+
+    def _new_ruleset(self):
+        """新建空规则集。"""
+        from maskit.rules.user_rules import BUILTIN_RS, save_ruleset
+
+        name, ok = QInputDialog.getText(self, "新建规则集", "规则集名称:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        if name == BUILTIN_RS or name in [n for n in self._all_names() if n != BUILTIN_RS]:
+            QMessageBox.warning(self, "提示", "该规则集已存在。")
+            return
+        save_ruleset(name, {n: dict(r) for n, r in self.defs.items()})
+        self._switch_to(name)
+
+    def _all_names(self):
+        from maskit.rules.user_rules import list_rulesets
+
+        return list_rulesets()
+
+    def _save_as(self):
+        """当前规则集另存为新的规则集。"""
+        from maskit.rules.user_rules import save_ruleset
+
+        name, ok = QInputDialog.getText(self, "另存为", "新规则集名称:")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        try:
+            save_ruleset(name, self.defs)
+            self._switch_to(name)
+        except ValueError as exc:
+            QMessageBox.warning(self, "提示", str(exc))
+
+    def _import_ruleset(self):
+        """从文件导入规则集。"""
+        from maskit.rules.user_rules import import_ruleset
+
+        path, _ = QFileDialog.getOpenFileName(self, "选择规则文件", "", "规则文件 (*.yaml *.yml)")
+        if not path:
+            return
+        try:
+            import_ruleset(path)
+            self._reload_rs_combo()
+            self._reload_defs()
+            self._refresh_table()
+            QMessageBox.information(self, "已导入", "已导入并设为当前规则集。")
+        except ValueError as exc:
+            QMessageBox.warning(self, "导入失败", str(exc))
+
+    def _export_ruleset(self):
+        """导出当前规则集到文件。"""
+        from maskit.rules.user_rules import BUILTIN_RS, export_ruleset
+
+        if self._current_rs_name() == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "内置默认规则集无需导出。")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "导出规则集", "ruleset.yaml", "规则文件 (*.yaml)")
+        if not path:
+            return
+        export_ruleset(self._current_rs_name(), path)
+        QMessageBox.information(self, "已导出", f"已导出到 {path}")
+
+    def _delete_ruleset(self):
+        """删除当前规则集（不能删内置/当前生效的）。"""
+        from maskit.rules.user_rules import BUILTIN_RS, delete_ruleset
+
+        name = self._current_rs_name()
+        if name == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "不能删除「内置默认」规则集。")
+            return
+        if QMessageBox.question(self, "确认", f"删除规则集 {name}？") != QMessageBox.Yes:
+            return
+        try:
+            delete_ruleset(name)
+        except ValueError as exc:
+            QMessageBox.warning(self, "提示", str(exc))
+            return
+        self._switch_to(BUILTIN_RS)
+
+    def _current_rs_name(self) -> str:
+        return self.rs_combo.currentText()
 
     def _refresh_table(self):
         """刷新规则表格。
@@ -241,20 +392,15 @@ class RulesManagerDialog(QDialog):
         self._refresh_table()
 
     def _save(self):
-        """保存到用户规则文件。"""
+        """保存当前规则集。"""
+        from maskit.rules.user_rules import BUILTIN_RS, save_ruleset
+
+        name = self._current_rs_name()
+        if name == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "内置默认规则集不可修改，请「另存为」新建一套。")
+            return
         try:
-            save_user_rules(self.defs)
-            QMessageBox.information(self, "已保存", f"规则已保存到 {user_rules_path()}\n下次脱敏自动使用。")
+            save_ruleset(name, self.defs)
+            QMessageBox.information(self, "已保存", f"规则集「{name}」已保存。\n下次脱敏自动使用。")
         except ValueError as exc:
             QMessageBox.warning(self, "保存失败", str(exc))
-
-    def _reset(self):
-        """恢复内置默认（删除用户规则文件）。"""
-        if QMessageBox.question(
-            self, "确认", "删除所有自定义规则，恢复内置默认？"
-        ) != QMessageBox.Yes:
-            return
-        delete_user_rules()
-        self.defs = get_rule_defs()
-        self._refresh_table()
-        QMessageBox.information(self, "已恢复", "已恢复内置默认规则。")

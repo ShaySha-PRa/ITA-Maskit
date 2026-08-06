@@ -55,10 +55,10 @@ class MaskWorker(QThread):
 
     def run(self):
         from maskit.io import mask_file
-        from maskit.rules.user_rules import load_user_rules
+        from maskit.rules.user_rules import get_current_ruleset, load_ruleset
 
-        # 加载用户规则（含 GUI 编辑的自定义规则）；无则内置默认
-        ruleset = load_user_rules()
+        # 加载当前规则集（GUI 规则管理里选中的）；默认内置
+        ruleset = load_ruleset(get_current_ruleset())
         total = len(self.files)
         for i, f in enumerate(self.files):
             src = Path(f)

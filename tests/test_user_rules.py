@@ -3,11 +3,13 @@
 import pytest
 
 from maskit.rules.user_rules import (
-    delete_user_rules,
+    delete_ruleset,
     get_rule_defs,
-    load_user_rules,
+    list_rulesets,
+    load_ruleset,
     rules_for_gui,
-    save_user_rules,
+    save_ruleset,
+    set_current_ruleset,
     user_rules_path,
     validate_rule_def,
 )
@@ -15,10 +17,10 @@ from maskit.rules.user_rules import (
 
 @pytest.fixture
 def user_rules(tmp_path, monkeypatch):
-    """隔离用户规则文件到临时目录。"""
-    path = tmp_path / "user_rules.yaml"
-    monkeypatch.setenv("MASKIT_USER_RULES", str(path))
-    return path
+    """隔离规则集目录 + 当前规则集到临时目录。"""
+    monkeypatch.setenv("MASKIT_RULESETS_DIR", str(tmp_path / "rulesets"))
+    monkeypatch.setenv("MASKIT_CURRENT_RS", str(tmp_path / "current"))
+    return tmp_path
 
 
 def test_default_rules(user_rules):
@@ -31,7 +33,9 @@ def test_default_rules(user_rules):
 
 
 def test_save_and_load_custom_rule(user_rules):
-    """保存自定义规则 → 重新加载生效。"""
+    """保存自定义规则到规则集 → 重新加载生效。"""
+    from maskit.rules.user_rules import save_ruleset, set_current_ruleset
+
     defs = get_rule_defs()
     defs["车牌号"] = {
         "version": "1.0",
@@ -39,10 +43,11 @@ def test_save_and_load_custom_rule(user_rules):
         "mask": "{first}*",
         "pseudo": "PL-{hash:8}",
     }
-    save_user_rules(defs)
+    save_ruleset("测试规则", defs)
+    set_current_ruleset("测试规则")
     loaded = get_rule_defs()
     assert "车牌号" in loaded
-    rs = load_user_rules()
+    rs = load_ruleset("测试规则")
     assert "车牌号" in rs.defs
 
 
@@ -64,14 +69,16 @@ def test_validate_empty_name(user_rules):
         validate_rule_def("", {"match": r".+", "mask": "{first}*", "pseudo": "X"})
 
 
-def test_delete_user_rules(user_rules):
-    """删除用户规则 → 恢复内置。"""
+def test_delete_ruleset(user_rules):
+    """删除规则集。"""
     defs = get_rule_defs()
     defs["自定义规则"] = {"version": "1.0", "match": r".+", "mask": "{first}*", "pseudo": "X"}
-    save_user_rules(defs)
-    assert "自定义规则" in get_rule_defs()
-    delete_user_rules()
-    assert "自定义规则" not in get_rule_defs()
+    save_ruleset("待删规则集", defs)
+    assert "待删规则集" in list_rulesets()
+    # 先切到内置再删（不能删当前生效的）
+    set_current_ruleset("内置默认")
+    delete_ruleset("待删规则集")
+    assert "待删规则集" not in list_rulesets()
 
 
 def test_rules_for_gui_source(user_rules):
@@ -101,7 +108,8 @@ def test_custom_rule_masks_in_pipeline(user_rules):
         "mask": "{head:3}****{tail:4}",
         "pseudo": "{digits}",
     }
-    save_user_rules(defs)
+    save_ruleset("自定义测试", defs)
+    set_current_ruleset("自定义测试")
 
     # 用用户规则 + 显式映射测试
     from maskit.rules.loader import _build_rule_def

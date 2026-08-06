@@ -264,6 +264,36 @@ def _build_value_scan_regexes(ruleset: RuleSet) -> list[tuple[RuleDef, re.Patter
     return compiled
 
 
+def _scan_match_rule(
+    value: str,
+    regexes: list[tuple[RuleDef, re.Pattern]],
+    name_rule: RuleDef | None = None,
+    person_list: set[str] | None = None,
+) -> RuleDef | None:
+    """返回命中值级检测的规则（无命中返回 None）。
+
+    与 _value_scan_single 的命中判定完全一致，供预验证标注命中规则名。
+    - 强特征规则（email/ip/id_card）整值匹配，最长正则优先
+    - 人员清单：值在清单里 → name（精确匹配，零误伤）
+    - 中文人名检测：排除词表外 + 姓氏开头的 2-4 字纯中文 → name
+    - 公式保护：=SUM(...) 开头不检测
+    """
+    v = value if value is not None else ""
+    if not v.strip() or v.strip().startswith("="):
+        return None
+    best = None
+    best_len = -1
+    for d, regex in regexes:
+        if regex.fullmatch(v.strip()) and len(d.match) > best_len:
+            best = d
+            best_len = len(d.match)
+    if best is None and name_rule is not None and person_list and v.strip() in person_list:
+        best = name_rule
+    if best is None and name_rule is not None and _is_person_name(v):
+        best = name_rule
+    return best
+
+
 def _value_scan_single(
     value: str,
     regexes: list[tuple[RuleDef, re.Pattern]],
@@ -274,35 +304,96 @@ def _value_scan_single(
 ) -> dict:
     """值级检测：值**整体**命中某敏感正则 → 用该规则脱敏。
 
-    - 强特征规则（email/ip/id_card）整值匹配
-    - 人员清单：值在清单里 → 按 name 脱敏（精确匹配，零误伤）
-    - 中文人名检测：排除词表外 + 姓氏开头的 2-4 字纯中文 → 按 name 脱敏
-    - 公式保护：=SUM(...) 开头不检测
-    返回 {"masked_value", "changed"}。
+    命中规则用 _scan_match_rule 判定；返回 {"masked_value", "changed"}。
     """
     v = value if value is not None else ""
     if not v.strip():
         return {"masked_value": "", "changed": 0}
-    # 公式保护：Excel 公式（=SUM...）不做值检测
-    if v.strip().startswith("="):
-        return {"masked_value": value, "changed": 0}
-    # 找命中的规则（最长正则优先）
-    best = None
-    best_len = -1
-    for d, regex in regexes:
-        if regex.fullmatch(v.strip()) and len(d.match) > best_len:
-            best = d
-            best_len = len(d.match)
-    # 人员清单优先：值在清单里 → 按 name 脱敏（精确匹配，零误伤）
-    if best is None and name_rule is not None and person_list and v.strip() in person_list:
-        best = name_rule
-    # 中文人名检测（排除词表外 + 姓氏开头）
-    if best is None and name_rule is not None and _is_person_name(v):
-        best = name_rule
+    best = _scan_match_rule(value, regexes, name_rule, person_list)
     if best is None:
         return {"masked_value": value, "changed": 0}
     out = _apply_single(best, v.strip(), strategy, pepper)
     return {"masked_value": out, "changed": 1 if out != v.strip() else 0}
+
+
+def preview_dataframe(
+    df: pl.DataFrame,
+    ruleset: RuleSet,
+    pepper: str | None = None,
+    person_list: set[str] | None = None,
+) -> list[dict]:
+    """预验证 DataFrame：按规则集「预演」，返回每列统计（不产出文件）。
+
+    每列一项：{column, rule, strategy, hits, total, ratio,
+              sample_before, sample_after}。
+    - rule 为命中规则名（列映射规则，或值级检测命中的规则）；无命中为 None
+    - 判定逻辑与 apply_rules 一致（含值级检测补漏），保证预览=实际脱敏
+    """
+    from maskit.rules.matcher import auto_match_columns
+
+    cols = df.columns
+    # 列映射（与 _mask_dataframe 一致：缺列跳过 optional，否则报错）
+    effective_specs = []
+    for spec in ruleset.specs:
+        if spec.column not in cols:
+            if spec.optional:
+                continue
+            raise ValueError(f"规则引用了不存在的列: {spec.column!r}")
+        effective_specs.append(spec)
+    if not effective_specs and all(s.optional for s in ruleset.specs):
+        effective_specs = auto_match_columns(cols)
+    spec_by_col = {s.column: s for s in effective_specs}
+
+    # 值级检测（与 apply_rules 一致）
+    regexes = _build_value_scan_regexes(ruleset)
+    name_rule = ruleset.defs.get("name")
+
+    results = []
+    for col in cols:
+        values = df[col].cast(pl.Utf8).to_list()
+        total = hits = 0
+        rule_label: str | None = None
+        strategy_label: str | None = None
+        sample_before = sample_after = None
+        spec = spec_by_col.get(col)
+        for v in values:
+            if v is None:
+                continue
+            total += 1
+            if spec is not None:
+                rule = ruleset.defs.get(spec.rule)
+                if rule is None:
+                    raise ValueError(f"规则 {spec.rule!r} 未定义")
+                if rule_label is None:
+                    rule_label = spec.rule
+                    strategy_label = spec.strategy
+                out = _apply_single_count(rule, v, spec.strategy, pepper)
+            else:
+                # 与 _value_scan_single 一致：命中判定与脱敏都用 strip 后的值
+                rule = _scan_match_rule(v, regexes, name_rule, person_list)
+                if rule is None:
+                    continue
+                if rule_label is None:
+                    rule_label = rule.name
+                    strategy_label = "mask"
+                vs = v.strip()
+                out = _apply_single_count(rule, vs, "mask", pepper)
+            if out["changed"]:
+                hits += 1
+                if sample_before is None:
+                    sample_before = vs if spec is None else v
+                    sample_after = out["masked_value"]
+        results.append({
+            "column": col,
+            "rule": rule_label,
+            "strategy": strategy_label,
+            "hits": hits,
+            "total": total,
+            "ratio": round(hits / total, 3) if total else 0.0,
+            "sample_before": sample_before,
+            "sample_after": sample_after,
+        })
+    return results
 
 
 def apply_rules(

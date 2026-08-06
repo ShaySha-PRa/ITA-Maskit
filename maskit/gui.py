@@ -239,14 +239,23 @@ class MainWindow(QMainWindow):
         rules_row.addStretch()
         layout.addLayout(rules_row)
 
-        # ③ 开始按钮
+        # ③ 操作按钮：预验证 + 开始脱敏
+        action_row = QHBoxLayout()
+        self.preview_btn = QPushButton("预验证")
+        self.preview_btn.setToolTip(
+            "先预览：哪些列会被脱敏、命中多少、改了什么样例，"
+            "以及哪些列规则没命中（不产出文件）。确认规则无误后再正式脱敏。"
+        )
+        self.preview_btn.clicked.connect(self._preview)
         self.start_btn = QPushButton("开始脱敏")
         self.start_btn.setStyleSheet(
             "QPushButton { background: #2d6cdf; color: white; padding: 8px; font-size: 15px; "
             "border-radius: 6px; } QPushButton:hover { background: #1e5ac0; }"
         )
         self.start_btn.clicked.connect(self._start)
-        layout.addWidget(self.start_btn)
+        action_row.addWidget(self.preview_btn)
+        action_row.addWidget(self.start_btn, 1)
+        layout.addLayout(action_row)
 
         # ④ 进度区
         progress_row = QHBoxLayout()
@@ -408,6 +417,61 @@ class MainWindow(QMainWindow):
         self.worker.finished_file.connect(self._on_file_done)
         self.worker.all_done.connect(self._on_all_done)
         self.worker.start()
+
+    def _preview(self):
+        """规则集预验证：预览哪些列会被脱敏、命中多少（不产出文件）。"""
+        from maskit.preview import preview_ruleset_file
+        from maskit.rules.user_rules import get_current_ruleset, load_ruleset
+
+        if not self.files:
+            QMessageBox.information(self, "提示", "请先选择或拖入文件。")
+            return
+
+        ruleset_name = self.rs_combo.currentText() if hasattr(self, "rs_combo") else get_current_ruleset()
+        try:
+            ruleset = load_ruleset(ruleset_name)
+        except ValueError as exc:
+            QMessageBox.warning(self, "规则集加载失败", str(exc))
+            return
+
+        # 伪名化列需要密钥（与正式脱敏一致）
+        pepper = None
+        if any(s.strategy == "pseudo" for s in ruleset.specs):
+            pepper = self.pepper_input.text()
+            if not pepper:
+                QMessageBox.warning(self, "提示", "当前规则集含伪名化列，请填写伪名化密钥后再预验证。")
+                return
+
+        # 只预验证表格文件；文本/图片格式无列，跳过并提示
+        from maskit.gui_preview import _is_previewable
+
+        previewable = [f for f in self.files if _is_previewable(f)]
+        self._preview_skipped = len(self.files) - len(previewable)
+        if not previewable:
+            QMessageBox.information(
+                self, "提示",
+                "预验证仅支持表格文件（csv/xlsx/json）。\n当前文件都是文本/图片格式（无列），请直接用「开始脱敏」。",
+            )
+            return
+
+        from maskit.gui_preview import PreviewWorker
+
+        self.preview_worker = PreviewWorker(previewable, ruleset, pepper, self.person_list)
+        self.preview_results: list[dict] = []
+        self.preview_worker.file_done.connect(lambda _i, r: self.preview_results.append(r))
+        self.preview_worker.all_done.connect(self._show_preview_results)
+        self.preview_btn.setEnabled(False)
+        QMessageBox.information(self, "预验证中", "正在预演规则命中情况，请稍候...")
+        self.preview_worker.start()
+
+    def _show_preview_results(self):
+        """预验证完成后：弹出结果对话框。"""
+        from maskit.gui_preview import RulesPreviewDialog
+
+        self.preview_btn.setEnabled(True)
+        dlg = RulesPreviewDialog(self)
+        dlg.populate(self.preview_results, skipped_count=self._preview_skipped)
+        dlg.exec_()
 
     # --- 回调 ---
 

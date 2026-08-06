@@ -30,3 +30,6 @@ htmlcov/
 # Personal Claude Code instructions (not for distribution)
 CLAUDE.md
 .claude/
+
+# Personal docs (resume, etc. — not for distribution)
+docs/

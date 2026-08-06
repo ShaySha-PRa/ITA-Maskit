@@ -168,6 +168,19 @@ class RulesManagerDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
 
+        # AI 生成规则区
+        ai_row = QHBoxLayout()
+        ai_label = QLabel("🤖 AI 生成规则:")
+        self.ai_input = QLineEdit()
+        self.ai_input.setPlaceholderText("用一句话描述规则要求，如「新增车牌号脱敏，保留省份和尾两位」")
+        ai_btn = QPushButton("生成")
+        ai_btn.setStyleSheet("background: #28a745; color: white; padding: 4px 12px; border-radius: 4px;")
+        ai_btn.clicked.connect(self._ai_generate_rule)
+        ai_row.addWidget(ai_label)
+        ai_row.addWidget(self.ai_input, 1)
+        ai_row.addWidget(ai_btn)
+        layout.addLayout(ai_row)
+
         # 操作按钮
         btn_row = QHBoxLayout()
         add_btn = QPushButton("+ 新增规则")
@@ -356,6 +369,94 @@ class RulesManagerDialog(QDialog):
             QMessageBox.information(self, "提示", "请先选择一个规则。")
             return None
         return self.table.item(row, 0).text()
+
+    def _ai_generate_rule(self):
+        """AI 生成规则：输入要求 → 调 LLM → 校验 → 存入当前规则集。
+
+        数据边界：只有用户输入的描述发给 LLM，脱敏数据永不出本地。
+        """
+
+        from maskit.llm import LLMClient, LLMConfig
+        from maskit.rules.user_rules import BUILTIN_RS
+
+        request = self.ai_input.text().strip()
+        if not request:
+            QMessageBox.information(self, "提示", "请先输入规则要求，如「新增车牌号脱敏，保留省份和尾两位」。")
+            return
+
+        # 当前规则集是内置默认 → 不能直接存，提示先新建/切换
+        if self._current_rs_name() == BUILTIN_RS:
+            QMessageBox.information(
+                self, "提示",
+                "当前是「内置默认」规则集（只读）。\nAI 生成的规则需要一个可保存的规则集，\n请先「新建」或「另存为」一套规则集。",
+            )
+            return
+
+        try:
+            config = LLMConfig.from_env()
+        except ValueError as exc:
+            QMessageBox.warning(
+                self, "未配置 API",
+                f"{exc}\n\n请在环境变量设置 MASKIT_LLM_API_KEY 后重启程序。",
+            )
+            return
+
+        # 调用 LLM（异步避免卡 UI）
+        from PyQt5.QtCore import QThread, pyqtSignal
+
+        class _GenWorker(QThread):
+            done = pyqtSignal(str, str)  # (yaml, error)
+            def __init__(self, request, config):
+                super().__init__()
+                self.request = request
+                self.config = config
+
+            def run(self):
+                try:
+                    client = LLMClient(self.config)
+                    yaml_text = client.generate_rules(self.request)
+                    self.done.emit(yaml_text, "")
+                except Exception as exc:  # noqa: BLE001 — GUI 层捕获所有异常
+                    self.done.emit("", str(exc))
+
+        self._gen_worker = _GenWorker(request, config)
+        self._gen_worker.done.connect(
+            lambda yaml_text, err: self._on_ai_done(yaml_text, err)
+        )
+        QMessageBox.information(self, "AI 生成中", "正在调用 AI 生成规则，请稍候...")
+        self._gen_worker.start()
+
+    def _on_ai_done(self, yaml_text: str, err: str):
+        """AI 生成完成后：校验 → 展示 → 确认存入。"""
+        import re
+
+        from maskit.rules.loader import load_ruleset_from_string
+
+        if err:
+            QMessageBox.warning(self, "AI 调用失败", err)
+            return
+
+        # 去掉 markdown 代码块包裹
+        clean = re.sub(r"^```yaml\s*|\s*```$", "", yaml_text).strip()
+        try:
+            rs = load_ruleset_from_string(clean)
+        except ValueError as exc:
+            QMessageBox.warning(self, "规则校验失败", f"AI 生成的规则无法解析：{exc}")
+            return
+
+        # 预览生成的新规则
+        new_rules = [n for n in rs.defs if n not in self.defs]
+        preview = "AI 生成的规则：\n\n" + clean
+        preview += f"\n\n（将新增 {len(new_rules)} 条规则到当前规则集）"
+
+        if QMessageBox.question(self, "AI 生成结果", preview + "\n\n确定存入当前规则集？") != QMessageBox.Yes:
+            return
+
+        # 存入当前规则集
+        for name, raw in rs.defs.items():
+            self.defs[name] = dict(raw)
+        self._refresh_table()
+        QMessageBox.information(self, "已添加", f"AI 已生成 {len(new_rules)} 条规则。\n点「保存当前规则集」生效。")
 
     def _add_rule(self):
         dlg = RuleEditDialog(self)

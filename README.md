@@ -92,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 GitHub → Actions → 最新一次运行 → **Artifacts** → 下载 `ITA-Maskit-exe`，解压即得 `ITA-Maskit.exe`。
 
 > **exe 注意**：
-> - 图片脱敏（beta）需额外安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) + 中文语言包（exe 未内置）
+> - 图片脱敏（beta）需安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) 二进制；**中文/英文语言包首次使用时自动下载**（约 28MB，无需手动装）
 > - AI 规则生成需设置环境变量 `MASKIT_LLM_API_KEY`
 
 **GUI 功能**：
@@ -103,6 +103,7 @@ GitHub → Actions → 最新一次运行 → **Artifacts** → 下载 `ITA-Mask
 - 异步处理：大文件不冻结界面
 - 规则管理（可视化编辑，描述代替正则）：规则集新建/切换/导入导出、人员清单全覆盖脱敏
 - **预验证**：正式脱敏前预览哪些列会被脱敏、命中多少、改了什么样例，未命中列黄标提示（不产出文件）
+- **图片脱敏（beta）**：勾选后 OCR 定位图片敏感区域并裁剪，中文/英文语言包首次自动下载
 - **AI 生成规则**：一句话描述 **或** 上传敏感信息规定文档（如 2026 年敏感信息规则，PDF/Word/邮件/文本）→ AI 解析并自动生成对应规则（只发规定/描述，脱敏数据永不出本地）
 
 **性能消耗**（普通办公电脑 4-8GB 内存可流畅运行）：
@@ -172,13 +173,16 @@ maskit mask mail.eml --scan-names --person-list people.csv -o mail_masked.eml
 ```bash
 # 启用图片裁剪脱敏（beta）
 pip install -e ".[image]"        # 安装 Pillow + pytesseract
-# 另需手动安装 tesseract 二进制 + 中文语言包（apt install tesseract-ocr tesseract-ocr-chi-sim）
+# 另需手动安装 tesseract 二进制（中文/英文语言包会自动下载，无需手动装）
+#   Linux:  sudo apt install tesseract-ocr
+#   Windows: choco install tesseract 或 UB Mannheim 安装包
 
 maskit mask screenshot.png --image-crop -o out.png
 ```
 
 - **默认关闭**：不传 `--image-crop` 时图片格式直接报错提示（beta 阶段不默认处理）
-- **数据安全**：tesseract 本地 OCR，数据不出机器
+- **语言包自动下载**：首次使用时自动下载中文/英文语言包（tessdata_fast，约 28MB）到 `~/.maskit/tessdata/`，之后 OCR 用 `chi_sim+eng` 识别中文；下载失败降级为英文，不阻断脱敏
+- **数据安全**：tesseract 本地 OCR + 语言包下载仅 tesseract 数据，脱敏数据不出机器
 - **已知局限**：裁剪后图片尺寸变小；OCR 识别率受图片质量影响
 
 ## LLM 规则生成（可选增强）

@@ -50,7 +50,7 @@ class MaskWorker(QThread):
 
     def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
                  ruleset_name: str | None = None, output_dir: str | None = None,
-                 person_list: set[str] | None = None):
+                 person_list: set[str] | None = None, image_crop: bool = False):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
@@ -59,6 +59,7 @@ class MaskWorker(QThread):
         self.ruleset_name = ruleset_name
         self.output_dir = output_dir
         self.person_list = person_list
+        self.image_crop = image_crop
         self.total_stats = MaskStats()
 
     def run(self):
@@ -78,6 +79,7 @@ class MaskWorker(QThread):
                     str(src), str(out), ruleset, self.pepper,
                     strategy=self.strategy, scan_names=self.scan_names,
                     person_list=self.person_list,
+                    image_crop=self.image_crop,
                     details=details,
                 )
                 self.total_stats.files += 1
@@ -213,8 +215,11 @@ class MainWindow(QMainWindow):
         self.pepper_input.setEchoMode(QLineEdit.Password)
         self.pepper_input.setEnabled(False)
         self.pseudo_cb.toggled.connect(self.pepper_input.setEnabled)
+        self.image_cb = QCheckBox("图片脱敏(beta)")
+        self.image_cb.setToolTip("对图片 OCR 定位敏感文字区域并裁剪掉；首次使用自动下载中文/英文语言包，需已安装 tesseract")
         options_row.addWidget(self.scan_names_cb)
         options_row.addWidget(self.pseudo_cb)
+        options_row.addWidget(self.image_cb)
         options_row.addWidget(self.pepper_input, 1)
         layout.addLayout(options_row)
 
@@ -398,6 +403,17 @@ class MainWindow(QMainWindow):
         ruleset_name = self.rs_combo.currentText() if hasattr(self, "rs_combo") else None
         output_dir = self.out_input.text().strip() or None
 
+        # 图片脱敏（beta）：勾选且含图片时，提示首次会自动下载语言包
+        if self.image_cb.isChecked() and any(
+            Path(f).suffix.lower() in {".png", ".jpg", ".jpeg"} for f in self.files
+        ):
+            QMessageBox.information(
+                self, "图片脱敏（beta）",
+                "将 OCR 定位图片中的敏感文字区域并裁剪掉。\n"
+                "首次使用会自动下载中文/英文语言包（约 28MB，需联网）；\n"
+                "请确保已安装 tesseract OCR。",
+            )
+
         self.start_btn.setEnabled(False)
         self.result_table.setRowCount(0)
         self.processed_label.setText("处理数据: 0")
@@ -411,6 +427,7 @@ class MainWindow(QMainWindow):
             self.files, self.scan_names_cb.isChecked(), strategy, pepper,
             ruleset_name=ruleset_name, output_dir=output_dir,
             person_list=self.person_list,
+            image_crop=self.image_cb.isChecked(),
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.stats.connect(self._on_stats)

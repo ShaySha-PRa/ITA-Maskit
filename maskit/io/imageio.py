@@ -8,19 +8,62 @@
 3. 收集敏感区域边界框，合并成裁剪区域
 4. Pillow 裁剪掉该区域（图片变小），敏感信息彻底移除
 
-依赖：tesseract 二进制（手动装）+ pytesseract + Pillow。
+依赖：tesseract 二进制（需手动装）+ pytesseract + Pillow。
+中文/英文语言包：首次使用时自动下载（tessdata_fast，无需手动找）。
 未启用 --image-crop 时，图片格式直接报错（beta，不默认处理）。
 """
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 from maskit.rules.defs import RuleSet
 from maskit.text import _strip_anchors
 
+# 语言包：首次图片脱敏时自动下载（tessdata_fast 官方仓库，~28MB 三件套）
+_TESSDATA_DIR = Path.home() / ".maskit" / "tessdata"
+_TESSDATA_BASE = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/"
+# 中文（简体）+ 英文 + 方向检测（OSD，自动分页时可能需要）
+_TESSDATA_LANGS = ("chi_sim", "eng", "osd")
+
+
+def ensure_tessdata(progress=None) -> Path:
+    """确保中文/英文语言包就位：缺失则自动下载到 ~/.maskit/tessdata/。
+
+    返回 tessdata 目录，并设置 TESSDATA_PREFIX 让 tesseract 使用它。
+    数据边界：只下载 tesseract 语言数据（非脱敏数据）。
+    """
+    import urllib.request
+
+    _TESSDATA_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ["TESSDATA_PREFIX"] = str(_TESSDATA_DIR)
+    if progress is None:
+        progress = lambda m: print(m, file=sys.stderr)
+    for lang in _TESSDATA_LANGS:
+        dest = _TESSDATA_DIR / f"{lang}.traineddata"
+        if dest.exists():
+            continue
+        progress(f"首次图片脱敏：自动下载语言包 {lang}.traineddata …")
+        try:
+            urllib.request.urlretrieve(f"{_TESSDATA_BASE}{lang}.traineddata", dest)
+        except Exception as exc:  # noqa: BLE001 — 下载失败降级，不阻断脱敏
+            progress(
+                f"警告：语言包 {lang}.traineddata 下载失败（{exc}）。\n"
+                "如识别中文不准确，请手动把 tessdata 放回 tesseract 的 tessdata 目录。"
+            )
+    return _TESSDATA_DIR
+
+
+def _ocr_lang() -> str:
+    """OCR 语言：中文包就位 → chi_sim+eng；否则退回 eng。"""
+    if (_TESSDATA_DIR / "chi_sim.traineddata").exists():
+        return "chi_sim+eng"
+    return "eng"
+
 
 def _load_tesseract():
-    """延迟加载 pytesseract + 校验 tesseract 可用。"""
+    """延迟加载 pytesseract + 校验 tesseract 可用 + 确保语言包。"""
     try:
         import pytesseract
     except ImportError as exc:
@@ -28,6 +71,8 @@ def _load_tesseract():
             "图片脱敏需要安装 pytesseract 和 tesseract OCR（beta 功能）。"
             "安装：pip install pytesseract，并安装 tesseract 二进制（含中文语言包）。"
         ) from exc
+    # 首次使用自动下载中文/英文语言包（beta 图片脱敏）
+    ensure_tessdata()
     return pytesseract
 
 
@@ -78,9 +123,11 @@ def mask_image_file(
     except Exception as exc:
         raise ValueError(f"无法读取图片: {src} ({exc})") from exc
 
-    # OCR：逐字/词级别拿文本 + 边界框
+    # OCR：逐字/词级别拿文本 + 边界框（中文包就位 → chi_sim+eng 识别中文）
     try:
-        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(
+            img, lang=_ocr_lang(), output_type=pytesseract.Output.DICT
+        )
     except Exception as exc:
         raise ValueError(
             f"OCR 失败（确认已安装 tesseract 及中文语言包）: {src} ({exc})"

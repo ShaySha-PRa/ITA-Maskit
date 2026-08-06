@@ -41,6 +41,8 @@ class RuleEditDialog(QDialog):
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.name_input = QLineEdit(rule_name)
+        self.desc_input = QLineEdit(rule.get("description", ""))
+        self.desc_input.setPlaceholderText("用通俗语言描述这个规则，如「18位身份证号」")
         self.match_input = QLineEdit(rule.get("match", ""))
         self.match_input.setPlaceholderText("Python 正则，如 \\d{17}[\\dX]")
         self.mask_input = QLineEdit(rule.get("mask", ""))
@@ -48,6 +50,7 @@ class RuleEditDialog(QDialog):
         self.pseudo_input = QLineEdit(rule.get("pseudo", ""))
         self.pseudo_input.setPlaceholderText("伪名模板，如 BC-{hash:8}")
         form.addRow("规则名:", self.name_input)
+        form.addRow("描述:", self.desc_input)
         form.addRow("匹配正则:", self.match_input)
         form.addRow("遮盖模板:", self.mask_input)
         form.addRow("伪名模板:", self.pseudo_input)
@@ -104,6 +107,7 @@ class RuleEditDialog(QDialog):
             self.name_input.text().strip(),
             {
                 "version": "1.0",
+                "description": self.desc_input.text().strip(),
                 "match": self.match_input.text(),
                 "mask": self.mask_input.text(),
                 "pseudo": self.pseudo_input.text(),
@@ -131,7 +135,7 @@ class RulesManagerDialog(QDialog):
 
         # 规则表格
         self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["规则名", "来源", "匹配正则", "遮盖模板", "伪名模板"])
+        self.table.setHorizontalHeaderLabels(["规则名", "来源", "描述", "遮盖方式", "伪名方式"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table, 1)
@@ -168,15 +172,32 @@ class RulesManagerDialog(QDialog):
         self._refresh_table()
 
     def _refresh_table(self):
-        """刷新规则表格。"""
+        """刷新规则表格。
+
+        列表显示通俗描述（方便非开发人员看懂），
+        真实正则/模板放在 tooltip（悬停可见，便于微调）。
+        """
         rules = rules_for_gui()
         self.table.setRowCount(len(rules))
         for r, rule in enumerate(rules):
-            self.table.setItem(r, 0, QTableWidgetItem(rule["name"]))
+            name_item = QTableWidgetItem(rule["name"])
+            name_item.setToolTip(f"规则名: {rule['name']}")
+            self.table.setItem(r, 0, name_item)
             self.table.setItem(r, 1, QTableWidgetItem(rule["source"]))
-            self.table.setItem(r, 2, QTableWidgetItem(rule["match"][:40]))
-            self.table.setItem(r, 3, QTableWidgetItem(rule["mask"][:30]))
-            self.table.setItem(r, 4, QTableWidgetItem(rule["pseudo"][:30]))
+            # 描述为主，真实正则作 tooltip
+            desc = rule["description"] or rule["match"][:40]
+            desc_item = QTableWidgetItem(desc[:50])
+            desc_item.setToolTip(f"匹配正则: {rule['match']}\n\n{desc}")
+            self.table.setItem(r, 2, desc_item)
+            # 遮盖/伪名模板：显示描述，模板作 tooltip
+            mask_desc = rule["mask"]
+            mask_item = QTableWidgetItem(mask_desc[:40])
+            mask_item.setToolTip(f"遮盖模板: {mask_desc}")
+            self.table.setItem(r, 3, mask_item)
+            pseudo_desc = rule["pseudo"]
+            pseudo_item = QTableWidgetItem(pseudo_desc[:40])
+            pseudo_item.setToolTip(f"伪名模板: {pseudo_desc}")
+            self.table.setItem(r, 4, pseudo_item)
 
     def _selected_rule_name(self) -> str | None:
         row = self.table.currentRow()

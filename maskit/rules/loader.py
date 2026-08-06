@@ -40,6 +40,7 @@ def _build_rule_def(name: str, raw: dict[str, Any]) -> RuleDef:
         default_disabled=bool(raw.get("default_disabled", False)),
         text_scanable=bool(raw.get("text_scanable", False)),
         keywords=list(raw.get("keywords", [])),
+        description=raw.get("description", ""),
     )
 
 

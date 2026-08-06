@@ -110,7 +110,7 @@ def load_user_rules() -> RuleSet:
 
 
 def rules_for_gui() -> list[dict[str, Any]]:
-    """返回 GUI 展示的规则列表（含来源标注：内置/用户）。"""
+    """返回 GUI 展示的规则列表（含来源标注 + 描述）。"""
     builtin = set(BUILTIN_RULE_DEFS.keys())
     defs = get_rule_defs()
     result = []
@@ -121,6 +121,7 @@ def rules_for_gui() -> list[dict[str, Any]]:
             "match": raw.get("match", ""),
             "mask": raw.get("mask", ""),
             "pseudo": raw.get("pseudo", ""),
+            "description": raw.get("description", ""),
             "source": "内置" if name in builtin else "自定义",
             "default_disabled": bool(raw.get("default_disabled", False)),
         })

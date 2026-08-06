@@ -30,6 +30,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "default",
         "text_scanable": False,  # 无法在文本流中区分名字
         "keywords": ["姓名", "名字", "name", "applicant", "员工", "人员", "签约", "nickname", "昵称"],
+        "description": "姓名（中文/英文），遮盖为只留首字",
     },
     "email": {
         "version": DEFAULT_VERSION,
@@ -39,6 +40,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "lower",
         "text_scanable": True,
         "keywords": ["邮箱", "邮件", "email", "mail", "e-mail", "电邮"],
+        "description": "电子邮箱地址，遮盖为保留域名隐藏账号",
     },
     "ip": {
         "version": DEFAULT_VERSION,
@@ -48,6 +50,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "none",
         "text_scanable": True,
         "keywords": ["ip地址", "ip", "地址"],
+        "description": "IP 地址，全遮盖为 *.*.*.*",
     },
     "phone": {
         "version": DEFAULT_VERSION,
@@ -57,6 +60,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "phone",
         "text_scanable": True,
         "keywords": ["手机", "电话", "phone", "mobile", "tel", "联系", "联系电话"],
+        "description": "手机号/电话号码，遮盖为保留前3后4",
     },
     "employee_id": {
         "version": DEFAULT_VERSION,
@@ -66,6 +70,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "upper",
         "text_scanable": True,
         "keywords": ["工号", "员工编号", "员工id", "员工号", "employee_id", "编号", "工牌"],
+        "description": "员工工号/编号，遮盖为保留前缀隐藏编号",
     },
     "account": {
         "version": DEFAULT_VERSION,
@@ -75,6 +80,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "default",
         "text_scanable": False,  # 纯字母数字无边界，易误伤普通单词
         "keywords": ["账号", "账户", "account", "username", "登录名", "login"],
+        "description": "账号/登录名，遮盖为保留首尾字符",
     },
     "company": {
         "version": DEFAULT_VERSION,
@@ -84,6 +90,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "default",
         "text_scanable": False,  # 无法在文本流中区分公司名
         "keywords": ["公司", "签约主体", "主体", "vendor", "company", "企业", "单位", "甲方"],
+        "description": "公司名/签约主体，遮盖为只留首字",
     },
     "app_version": {
         "version": DEFAULT_VERSION,
@@ -93,6 +100,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "lower",
         "text_scanable": True,
         "keywords": ["版本", "version", "软件版本", "app_version"],
+        "description": "软件版本号，遮盖为保留主版本",
     },
     "id_card": {
         "version": DEFAULT_VERSION,
@@ -102,6 +110,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "upper",
         "text_scanable": True,
         "keywords": ["身份证", "证件号", "id_card", "idcard", "idnumber", "证件号码", "身份证号"],
+        "description": "18位身份证号，遮盖为保留前6后4",
     },
     "bank_card": {
         "version": DEFAULT_VERSION,
@@ -111,6 +120,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "normalize": "none",
         "text_scanable": True,
         "keywords": ["银行卡", "卡号", "银行账户", "bank_card", "bankcard", "bank_account", "银行卡号"],
+        "description": "银行卡号（16-19位），遮盖为保留前6后4",
     },
     # 合规敏感，默认关闭（需在 YAML 显式启用）
     "ssn": {
@@ -177,6 +187,7 @@ class RuleDef:
     default_disabled: bool = False
     text_scanable: bool = False  # 是否可用于文本流 PII 扫描
     keywords: list[str] = field(default_factory=list)  # 列名自动匹配语义关键词
+    description: str = ""  # 通俗描述（GUI 展示，面向非开发人员）
 
     @property
     def regex(self) -> re.Pattern:

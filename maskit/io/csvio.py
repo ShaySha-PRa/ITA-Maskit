@@ -13,7 +13,8 @@ from maskit.rules.defs import RuleSet
 
 
 def _mask_dataframe(
-    df: pl.DataFrame, ruleset: RuleSet, pepper: str | None
+    df: pl.DataFrame, ruleset: RuleSet, pepper: str | None,
+    person_list: set[str] | None = None,
 ) -> tuple[pl.DataFrame, int]:
     """对 DataFrame 按规则集脱敏，返回 (脱敏后 DataFrame, 脱敏单元格数)。
 
@@ -21,6 +22,7 @@ def _mask_dataframe(
     - 规则引用缺列：显式 YAML → 硬错误；默认规则集（optional）→ 跳过
     - null 保持 null
     - 默认规则集（无显式 rules）对真实列名自动匹配（中文列名也能识别）
+    - person_list：人员清单，值在清单里 → 按 name 脱敏
     """
     from maskit.rules.engine import apply_rules
 
@@ -44,7 +46,9 @@ def _mask_dataframe(
     from maskit.rules.defs import RuleSet
 
     effective_ruleset = RuleSet(defs=ruleset.defs, specs=effective_specs)
-    masked_df, masked_count = apply_rules(df, effective_ruleset, pepper)
+    masked_df, masked_count = apply_rules(
+        df, effective_ruleset, pepper, person_list=person_list
+    )
     return masked_df, masked_count
 
 
@@ -55,10 +59,12 @@ def mask_csv_file(
     pepper: str | None,
     encoding: str = "utf-8",
     details: dict | None = None,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 CSV → CSV，返回处理行数。
 
     details（可选）：记录 masked 数（脱敏单元格数）。
+    person_list（可选）：人员清单，值在清单里按 name 脱敏。
     """
     src = Path(input_path)
     dst = Path(output_path)
@@ -87,7 +93,7 @@ def mask_csv_file(
     if df.height == 0:
         raise ValueError(f"输入文件无数据: {src}")
 
-    masked_df, masked_count = _mask_dataframe(df, ruleset, pepper)
+    masked_df, masked_count = _mask_dataframe(df, ruleset, pepper, person_list)
     if masked_df.height == 0:
         raise ValueError(f"输入文件无数据: {src}")
 

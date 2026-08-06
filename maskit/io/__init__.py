@@ -41,17 +41,17 @@ def mask_file(
     if ext == ".csv":
         from maskit.io.csvio import mask_csv_file
 
-        return mask_csv_file(input_path, output_path, ruleset, pepper, encoding, details)
+        return mask_csv_file(input_path, output_path, ruleset, pepper, encoding, details, person_list)
 
     if ext in {".xlsx", ".xls"}:
         from maskit.io.excelio import mask_excel_file
 
-        return mask_excel_file(input_path, output_path, ruleset, pepper, details)
+        return mask_excel_file(input_path, output_path, ruleset, pepper, details, person_list)
 
     if ext in {".json", ".jsonl", ".ndjson"}:
         from maskit.io.jsonio import mask_json_file
 
-        return mask_json_file(input_path, output_path, ruleset, pepper, details)
+        return mask_json_file(input_path, output_path, ruleset, pepper, details, person_list)
 
     if ext == ".eml":
         from maskit.io.emailio import mask_email_file

@@ -49,7 +49,8 @@ class MaskWorker(QThread):
     all_done = pyqtSignal()
 
     def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
-                 ruleset_name: str | None = None, output_dir: str | None = None):
+                 ruleset_name: str | None = None, output_dir: str | None = None,
+                 person_list: set[str] | None = None):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
@@ -57,6 +58,7 @@ class MaskWorker(QThread):
         self.pepper = pepper
         self.ruleset_name = ruleset_name
         self.output_dir = output_dir
+        self.person_list = person_list
         self.total_stats = MaskStats()
 
     def run(self):
@@ -75,6 +77,7 @@ class MaskWorker(QThread):
                 mask_file(
                     str(src), str(out), ruleset, self.pepper,
                     strategy=self.strategy, scan_names=self.scan_names,
+                    person_list=self.person_list,
                     details=details,
                 )
                 self.total_stats.files += 1
@@ -143,6 +146,7 @@ class MainWindow(QMainWindow):
         self.resize(720, 560)
         self.files: list[str] = []
         self.worker = None
+        self.person_list: set[str] | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -186,6 +190,18 @@ class MainWindow(QMainWindow):
         out_row.addWidget(self.out_input, 1)
         out_row.addWidget(out_browse)
         layout.addLayout(out_row)
+
+        # 人员清单
+        pl_row = QHBoxLayout()
+        pl_label = QLabel("人员清单:")
+        self.pl_input = QLineEdit()
+        self.pl_input.setPlaceholderText("选公司人员名单 CSV（清单里的人员名全覆盖脱敏）")
+        pl_browse = QPushButton("浏览...")
+        pl_browse.clicked.connect(self._browse_person_list)
+        pl_row.addWidget(pl_label)
+        pl_row.addWidget(self.pl_input, 1)
+        pl_row.addWidget(pl_browse)
+        layout.addLayout(pl_row)
 
         # ② 选项
         options_row = QHBoxLayout()
@@ -333,6 +349,20 @@ class MainWindow(QMainWindow):
         if d:
             self.out_input.setText(d)
 
+    def _browse_person_list(self):
+        from maskit.rules.name_company import load_person_list
+
+        f, _ = QFileDialog.getOpenFileName(self, "选择人员清单", "", "CSV 文件 (*.csv)")
+        if f:
+            try:
+                people = load_person_list(f)
+                self.pl_input.setText(f)
+                self.person_list = people
+                QMessageBox.information(self, "已加载", f"已加载 {len(people)} 个人员姓名。\n清单里的姓名将全覆盖脱敏。")
+            except (ValueError, FileNotFoundError) as exc:
+                QMessageBox.warning(self, "加载失败", str(exc))
+                self.person_list = None
+
     def _reload_rulesets(self):
         """刷新规则集下拉，默认选中当前规则集。"""
         from maskit.rules.user_rules import get_current_ruleset, list_rulesets
@@ -371,6 +401,7 @@ class MainWindow(QMainWindow):
         self.worker = MaskWorker(
             self.files, self.scan_names_cb.isChecked(), strategy, pepper,
             ruleset_name=ruleset_name, output_dir=output_dir,
+            person_list=self.person_list,
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.stats.connect(self._on_stats)

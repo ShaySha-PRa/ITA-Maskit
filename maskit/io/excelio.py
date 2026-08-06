@@ -23,12 +23,14 @@ def mask_excel_file(
     ruleset: RuleSet,
     pepper: str | None,
     details: dict | None = None,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 Excel（全部 sheet）→ Excel，返回总处理行数。
 
     用 openpyxl 读取全部 sheet → 逐 sheet 转 Polars 脱敏 → 写回。
     details（可选）：传入 dict 时，记录每个 sheet 的处理信息
     （sheet 名、行数、脱敏单元格数），供 GUI 展示。
+    person_list（可选）：人员清单，值在清单里按 name 脱敏。
     """
     src = Path(input_path)
     dst = Path(output_path)
@@ -67,7 +69,7 @@ def mask_excel_file(
             for row in data
         ]
         df = pl.DataFrame(data, schema=header, orient="row")
-        masked, masked_count = _mask_dataframe(df, ruleset, pepper)
+        masked, masked_count = _mask_dataframe(df, ruleset, pepper, person_list)
         total += masked.height
         # 记录每个 sheet 的处理信息（供 GUI 展示）
         sheet_info.append({

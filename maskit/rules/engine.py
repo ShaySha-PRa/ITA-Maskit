@@ -270,10 +270,12 @@ def _value_scan_single(
     strategy: str,
     pepper: str | None,
     name_rule: RuleDef | None = None,
+    person_list: set[str] | None = None,
 ) -> dict:
     """值级检测：值**整体**命中某敏感正则 → 用该规则脱敏。
 
     - 强特征规则（email/ip/id_card）整值匹配
+    - 人员清单：值在清单里 → 按 name 脱敏（精确匹配，零误伤）
     - 中文人名检测：排除词表外 + 姓氏开头的 2-4 字纯中文 → 按 name 脱敏
     - 公式保护：=SUM(...) 开头不检测
     返回 {"masked_value", "changed"}。
@@ -291,6 +293,9 @@ def _value_scan_single(
         if regex.fullmatch(v.strip()) and len(d.match) > best_len:
             best = d
             best_len = len(d.match)
+    # 人员清单优先：值在清单里 → 按 name 脱敏（精确匹配，零误伤）
+    if best is None and name_rule is not None and person_list and v.strip() in person_list:
+        best = name_rule
     # 中文人名检测（排除词表外 + 姓氏开头）
     if best is None and name_rule is not None and _is_person_name(v):
         best = name_rule
@@ -305,12 +310,14 @@ def apply_rules(
     ruleset: RuleSet,
     pepper: str | None,
     value_scan: bool = True,
+    person_list: set[str] | None = None,
 ) -> tuple[pl.DataFrame, int]:
     """对 DataFrame 应用规则集，返回 (脱敏后 DataFrame, 脱敏单元格数)。
 
     - 映射列按规则/策略处理
     - 未映射列：value_scan=True 时做值级检测（身份证/手机/邮箱等强正则），
       命中即脱敏（补列名漏检）
+    - person_list：人员清单，值在清单里 → 按 name 脱敏（精确匹配）
     - null 保持 null
     """
     out = df
@@ -352,8 +359,8 @@ def apply_rules(
                     continue  # 已匹配列不重复
                 col = pl.col(col_name).cast(pl.Utf8)
                 result = col.map_elements(
-                    lambda v, rx=regexes, nr=name_rule, p=pepper: _value_scan_single(
-                        v if v is not None else "", rx, "mask", p, nr
+                    lambda v, rx=regexes, nr=name_rule, p=pepper, plist=person_list: _value_scan_single(
+                        v if v is not None else "", rx, "mask", p, nr, plist
                     ),
                     return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
                 ).alias("__vs_result")

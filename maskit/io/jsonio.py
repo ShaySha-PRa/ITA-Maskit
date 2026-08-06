@@ -18,10 +18,12 @@ def mask_json_file(
     ruleset: RuleSet,
     pepper: str | None,
     details: dict | None = None,
+    person_list: set[str] | None = None,
 ) -> int:
     """脱敏 JSON / JSONL → JSONL，返回处理行数。
 
     details（可选）：记录 masked 数。
+    person_list（可选）：人员清单。
     """
     src = Path(input_path)
     dst = Path(output_path)
@@ -46,7 +48,7 @@ def mask_json_file(
     if df.height == 0:
         raise ValueError(f"JSON 文件无数据: {src}")
 
-    masked, masked_count = _mask_dataframe(df, ruleset, pepper)
+    masked, masked_count = _mask_dataframe(df, ruleset, pepper, person_list)
     if masked.height == 0:
         raise ValueError(f"JSON 文件无数据: {src}")
 

@@ -161,6 +161,124 @@ def rules_list() -> None:
         typer.echo(f"  {r['rule']:<14} v{r['version']:<5} mask={r['mask']!r:<20} pseudo={r['pseudo']!r}{tag}")
 
 
+@rules_app.command("generate")
+def rules_generate(
+    request: str = typer.Argument(None, help="自然语言描述脱敏要求（如「新增税务登记号脱敏，手机号伪名化」）"),
+    input_doc: str | None = typer.Option(
+        None, "--input", "-i", help="规则要求文档（PDF/Word/邮件/文本），LLM 解析文档提取规则"
+    ),
+    output: str = typer.Option(
+        "rules-generated.yaml", "--output", "-o", help="生成的规则 YAML 输出路径"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="只预览生成结果，不写入文件"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="跳过人工确认直接写入"),
+) -> None:
+    """用 LLM 生成规则 YAML（可选增强，需配置 MASKIT_LLM_API_KEY）。
+
+    数据边界：只有描述/文档发给 LLM，脱敏数据永不出本地。
+    """
+    try:
+        _run_rules_generate(request, input_doc, output, dry_run, yes)
+    except UserError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2)
+
+
+def _run_rules_generate(
+    request: str | None, input_doc: str | None, output: str, dry_run: bool, yes: bool
+) -> None:
+    """rules generate 核心逻辑。"""
+    from maskit.llm import LLMClient, LLMConfig
+
+    # 收集输入：自然语言描述 或 规则文档
+    if not request and not input_doc:
+        raise UserError("请提供脱敏要求描述（参数）或规则文档（--input）。")
+    if request and input_doc:
+        raise UserError("描述和 --input 只能提供一个。")
+
+    user_request = request or ""
+    if input_doc:
+        # 复用现有文本提取：PDF/Word/邮件 → 提取文本作为要求
+        user_request = _extract_doc_text(input_doc)
+
+    # 调用 LLM 生成
+    config = LLMConfig.from_env()
+    client = LLMClient(config)
+    typer.echo(f"正在调用 LLM（{config.model}）解析脱敏要求...")
+    try:
+        yaml_text = client.generate_rules(user_request)
+    except ValueError as exc:
+        raise UserError(str(exc))
+
+    # 本地校验生成的 YAML
+    from maskit.rules.loader import load_ruleset_from_string
+
+    try:
+        ruleset = load_ruleset_from_string(yaml_text)
+    except ValueError as exc:
+        raise UserError(f"生成的规则 YAML 校验失败（请重试或人工修正）: {exc}")
+
+    # 展示
+    typer.echo(f"\n✓ 规则集校验通过（版本: {ruleset.version}，{len(ruleset.specs)} 条列映射）\n")
+    typer.echo(yaml_text.strip())
+    typer.echo("")
+
+    if dry_run:
+        typer.echo("（--dry-run，未写入文件）")
+        return
+
+    # 人工确认
+    if not yes:
+        typer.echo(f"写入 {output} ? [y/N] ", nl=False)
+        answer = input().strip().lower()
+        if answer not in ("y", "yes"):
+            typer.echo("已取消。")
+            return
+
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(yaml_text)
+    typer.echo(f"✓ 已写入 {output}")
+    typer.echo(f"  使用: maskit mask data.csv --rules {output}")
+
+
+def _extract_doc_text(path: str) -> str:
+    """从规则要求文档提取文本（复用现有格式解析）。"""
+    from pathlib import Path
+
+    ext = Path(path).suffix.lower()
+    try:
+        if ext == ".pdf":
+            from maskit.io.pdfio import _read_pdf_text
+            return "\n".join(_read_pdf_text(Path(path)))
+        if ext == ".docx":
+            from docx import Document
+            doc = Document(path)
+            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        if ext in (".eml", ".msg"):
+            if ext == ".eml":
+                from email import policy
+                from email.parser import BytesParser
+                msg = BytesParser(policy=policy.default).parsebytes(Path(path).read_bytes())
+            else:
+                from extract_msg import Message
+                with Message(str(path)) as m:
+                    msg = m.asEmailMessage()
+            parts = []
+            for part in msg.walk():
+                if part.get_content_type() in ("text/plain", "text/html"):
+                    parts.append(part.get_payload(decode=True).decode("utf-8", "ignore"))
+            return "\n".join(parts)
+        # 纯文本
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        raise UserError(f"文档不存在: {path}")
+    except Exception as exc:  # noqa: BLE001 — 文档解析失败统一转用户错误
+        raise UserError(f"无法读取文档 {path}: {exc}")
+
+
 @app.command()
 def audit(
     limit: int = typer.Option(50, "--limit", help="显示最近 N 条"),

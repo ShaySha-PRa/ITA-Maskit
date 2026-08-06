@@ -42,6 +42,31 @@ def _build_rule_def(name: str, raw: dict[str, Any]) -> RuleDef:
     )
 
 
+def _build_ruleset_from_data(data: dict, *, optional_specs: bool = False) -> RuleSet:
+    """从解析后的 YAML dict 构建 RuleSet。
+
+    optional_specs=True → 列映射标记 optional（缺列静默跳过），默认规则集用。
+    """
+    defs: dict[str, RuleDef] = {
+        name: _build_rule_def(name, raw) for name, raw in BUILTIN_RULE_DEFS.items()
+    }
+    # ① rule_defs：覆盖/新增规则定义
+    for name, raw in (data.get("rule_defs") or {}).items():
+        defs[name] = _build_rule_def(name, raw)
+    # ② rules：列映射
+    specs = []
+    for m in (data.get("rules") or []):
+        if optional_specs:
+            m = dict(m)
+            m.setdefault("optional", True)
+        specs.append(RuleSpec(**m))
+
+    ruleset = RuleSet(defs=defs, specs=specs)
+    for spec in specs:
+        spec.validate(set(defs.keys()))
+    return ruleset
+
+
 def load_ruleset(yaml_path: str | Path | None = None) -> RuleSet:
     """加载规则集。
 
@@ -49,13 +74,13 @@ def load_ruleset(yaml_path: str | Path | None = None) -> RuleSet:
     有 yaml_path → 内置定义为基础，YAML 的 rule_defs 覆盖/新增；
                    rules 段做列映射。
     """
-    defs: dict[str, RuleDef] = {
-        name: _build_rule_def(name, raw) for name, raw in BUILTIN_RULE_DEFS.items()
-    }
-
     if yaml_path is None:
         # 默认规则集：对存在的敏感列脱敏（optional=True，缺列静默跳过）
         specs = [RuleSpec(**m, optional=True) for m in DEFAULT_MAPPING]
+        return RuleSet(
+            defs={name: _build_rule_def(name, raw) for name, raw in BUILTIN_RULE_DEFS.items()},
+            specs=specs,
+        )
     else:
         path = Path(yaml_path)
         if not path.exists():
@@ -64,19 +89,16 @@ def load_ruleset(yaml_path: str | Path | None = None) -> RuleSet:
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError as exc:
             raise ValueError(f"规则文件 YAML 解析失败: {path} ({exc})") from exc
+        return _build_ruleset_from_data(data)
 
-        # ① rule_defs：覆盖/新增规则定义
-        for name, raw in (data.get("rule_defs") or {}).items():
-            defs[name] = _build_rule_def(name, raw)
 
-        # ② rules：列映射
-        specs = [RuleSpec(**m) for m in (data.get("rules") or [])]
-
-    ruleset = RuleSet(defs=defs, specs=specs)
-    # 校验（列映射引用的规则存在、策略合法）
-    for spec in specs:
-        spec.validate(set(defs.keys()))
-    return ruleset
+def load_ruleset_from_string(yaml_text: str) -> RuleSet:
+    """从 YAML 字符串加载规则集（供 LLM 生成结果校验）。"""
+    try:
+        data = yaml.safe_load(yaml_text) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"生成的规则 YAML 解析失败: {exc}") from exc
+    return _build_ruleset_from_data(data)
 
 
 def list_rules(ruleset: RuleSet | None = None) -> list[dict[str, Any]]:

@@ -117,6 +117,36 @@ maskit mask screenshot.png --image-crop -o out.png
 - **数据安全**：tesseract 本地 OCR，数据不出机器
 - **已知局限**：裁剪后图片尺寸变小；OCR 识别率受图片质量影响
 
+## LLM 规则生成（可选增强）
+
+审计人员不会写正则/YAML，但**脱敏要求每年都变**。接入大模型 API，把**自然语言描述**或**规则文档**解析成 CLI 可直接用的规则 YAML。
+
+```bash
+# 配置（环境变量，支持任意 OpenAI 兼容端点）
+export MASKIT_LLM_API_KEY=...          # API key
+export MASKIT_LLM_BASE_URL=https://api.openai.com/v1   # 可切通义/DeepSeek/智谱
+export MASKIT_LLM_MODEL=gpt-4o-mini    # 或 qwen-plus 等
+
+# 1) 自然语言描述生成规则
+maskit rules generate "新增税务登记号脱敏，手机号改为确定性伪名化" -o rules-2027.yaml
+
+# 2) 上传规则文档解析（PDF/Word/邮件/文本）
+maskit rules generate --input policy-2027.pdf -o rules-2027.yaml
+
+# 3) 预览不落盘
+maskit rules generate "..." --dry-run
+```
+
+**功能边界（强约束）**：LLM 是**专用规则生成器**，唯一功能是把脱敏要求解析成规则 YAML。Prompt 层强制——忽略任何规则生成以外的指令、不执行其它任务、输入无法解析时输出空规则文件。
+
+**数据边界（硬约束）**：
+- 只有你**主动提供**的「描述/规则文档」发给 LLM
+- **脱敏数据（CSV 等）永不进入** LLM 调用
+- API key 只从环境变量读，不落盘
+- 生成的 YAML 经本地校验（字段完整/策略合法/正则可编译）后才写入，可 `--dry-run` 预览
+
+**合规提示**：规则文档会发给你配置的 LLM 服务商，请确认合规后使用。
+
 ## 命令
 
 | 命令 | 说明 |
@@ -124,6 +154,7 @@ maskit mask screenshot.png --image-crop -o out.png
 | `maskit mask <in> [--rules r.yaml] [--pepper KEY] [--strategy mask\|pseudo] [-o out]` | 脱敏任意支持格式 |
 | `maskit demo [--rows N] [--seed N]` | 生成确定性演示数据 |
 | `maskit rules list` | 列出可用规则 |
+| `maskit rules generate "<要求>" [--input doc] [-o out]` | LLM 生成规则 YAML（可选增强） |
 | `maskit audit [--limit N]` | 查看审计日志 |
 
 > `--strategy` 仅对文本格式生效；表格格式的策略由各列的 rules.yaml 决定。
@@ -172,6 +203,7 @@ rules:
 
 | 版本 | 内容 |
 |------|------|
+| **V3.1** (0.3.1) | LLM 规则生成（`rules generate`，OpenAI 兼容，专用规则生成器强约束） |
 | **V3** (0.3.0) | 姓名/公司名文本识别（`--scan-names`）+ 全量人员清单（`--person-list`）+ Outlook .msg + Excel 多 sheet + 图片裁剪脱敏（beta `--image-crop`），纯本地零网络 |
 | **V2** (0.2.0) | 多格式支持：Excel/JSON/邮件/PDF/Word，双引擎架构（表格按列 + 文本全文 PII 扫描） |
 | **V1** (0.1.0) | CSV 脱敏 + 确定性伪名化 + 数据驱动规则 + 审计日志 |
@@ -196,7 +228,7 @@ rules:
 
 ```bash
 pip install -e ".[dev]"
-pytest            # 71 个测试，覆盖确定性/边缘/性能/各格式端到端/姓名识别
+pytest            # 85 个测试，覆盖确定性/边缘/性能/各格式端到端/姓名识别/LLM生成
 ruff check .      # 代码规范
 ```
 

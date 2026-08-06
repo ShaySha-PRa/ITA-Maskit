@@ -473,6 +473,11 @@ class RulesManagerDialog(QDialog):
         QMessageBox.information(self, "已添加", f"AI 已生成 {len(new_rules)} 条规则，已保存到规则集「{current}」。")
 
     def _add_rule(self):
+        from maskit.rules.user_rules import BUILTIN_RS
+
+        if self._current_rs_name() == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "内置默认规则集不可修改，请先「新建」一套规则集。")
+            return
         dlg = RuleEditDialog(self)
         if dlg.exec_():
             name, raw = dlg.get_data()
@@ -480,9 +485,22 @@ class RulesManagerDialog(QDialog):
                 QMessageBox.warning(self, "提示", f"规则 {name} 已存在，请用编辑或换名字。")
                 return
             self.defs[name] = raw
+            # 立即保存到当前规则集，列表即可看到
+            try:
+                from maskit.rules.user_rules import save_ruleset
+
+                save_ruleset(self._current_rs_name(), self.defs)
+            except ValueError as exc:
+                QMessageBox.warning(self, "保存失败", str(exc))
+                return
             self._refresh_table()
 
     def _edit_rule(self):
+        from maskit.rules.user_rules import BUILTIN_RS, save_ruleset
+
+        if self._current_rs_name() == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "内置默认规则集不可修改，请先「新建」一套规则集。")
+            return
         name = self._selected_rule_name()
         if not name:
             return
@@ -493,17 +511,34 @@ class RulesManagerDialog(QDialog):
             if new_name != name:
                 self.defs.pop(name, None)
             self.defs[new_name] = raw
+            # 立即保存
+            try:
+                save_ruleset(self._current_rs_name(), self.defs)
+            except ValueError as exc:
+                QMessageBox.warning(self, "保存失败", str(exc))
+                return
             self._refresh_table()
 
     def _delete_rule(self):
+        from maskit.rules.user_rules import BUILTIN_RS, save_ruleset
+
+        if self._current_rs_name() == BUILTIN_RS:
+            QMessageBox.information(self, "提示", "内置默认规则集不可修改，请先「新建」一套规则集。")
+            return
         name = self._selected_rule_name()
         if not name:
             return
         if QMessageBox.question(
-            self, "确认", f"删除规则 {name}？（内置规则删除后恢复默认，脱敏不再用它）"
+            self, "确认", f"删除规则 {name}？"
         ) != QMessageBox.Yes:
             return
         self.defs.pop(name, None)
+        # 立即保存
+        try:
+            save_ruleset(self._current_rs_name(), self.defs)
+        except ValueError as exc:
+            QMessageBox.warning(self, "保存失败", str(exc))
+            return
         self._refresh_table()
 
     def _save(self):

@@ -1,5 +1,7 @@
 """LLM 规则生成测试：mock API、schema 校验、prompt 构造、数据边界。"""
 
+import os
+
 import pytest
 
 from maskit.llm import LLMClient, LLMConfig, build_rules_prompt
@@ -142,3 +144,52 @@ def test_llm_config_from_env_reads(monkeypatch):
     assert cfg.api_key == "test-key"
     assert cfg.base_url == "https://example.com/v1"
     assert cfg.model == "qwen-plus"
+
+
+# --- {second} 占位符（LLM 生成车牌规则时用到） ---
+
+def test_second_placeholder():
+    """{second} 占位符：保留第二字符。"""
+    from maskit.rules.engine import _apply_single
+    from maskit.rules.loader import _build_rule_def
+
+    rule = _build_rule_def(
+        "license_plate",
+        {"match": "x", "mask": "{first}{second}***{tail:2}", "pseudo": "X"},
+    )
+    assert _apply_single(rule, "沪A12345", "mask", None) == "沪A***45"
+    # 不足两位时第二字符为空
+    assert _apply_single(rule, "沪", "mask", None) == "沪***沪"
+
+
+# --- DeepSeek 集成测试（有 API key 时运行） ---
+
+def test_deepseek_generate_rules_integration():
+    """DeepSeek 真实调用：生成 → 校验 → 脱敏（需 MASKIT_LLM_API_KEY）。"""
+    api_key = os.environ.get("MASKIT_LLM_API_KEY")
+    if not api_key:
+        pytest.skip("未配置 MASKIT_LLM_API_KEY，跳过真实调用")
+    import re
+
+    import polars as pl
+
+    from maskit.rules.defs import RuleSet, RuleSpec
+    from maskit.rules.engine import apply_rules
+
+    os.environ.setdefault("MASKIT_LLM_BASE_URL", "https://api.deepseek.com/v1")
+    os.environ.setdefault("MASKIT_LLM_MODEL", "deepseek-chat")
+    cfg = LLMConfig.from_env()
+    client = LLMClient(cfg)
+    yaml_text = client.generate_rules("新增「车牌号」脱敏规则，遮盖保留省份字和最后两位")
+    clean = re.sub(r"^```yaml\s*|\s*```$", "", yaml_text).strip()
+    rs = load_ruleset_from_string(clean)
+    assert "license_plate" in rs.defs
+
+    custom_rs = RuleSet(
+        defs=rs.defs,
+        specs=[RuleSpec(column="车牌", rule="license_plate", strategy="mask")],
+    )
+    df = pl.DataFrame({"车牌": ["沪A12345"]})
+    masked, count = apply_rules(df, custom_rs, None)
+    assert count == 1
+    assert masked["车牌"].to_list()[0] != "沪A12345"

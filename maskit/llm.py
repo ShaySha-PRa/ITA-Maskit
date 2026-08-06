@@ -26,12 +26,13 @@ DEFAULT_MODEL = "gpt-4o-mini"
 
 # 模板占位符语法说明（注入 prompt，让 LLM 生成合法规则）
 _TEMPLATE_HINTS = """
-模板占位符（mask/pseudo 字段可用）：
+可用模板占位符（mask/pseudo 字段**只能**用这些，不要用其它）：
   {hash:8}   确定性 HMAC 哈希（pseudo 必用）
   {first}    首字符
+  {second}   第二字符
   {last}     尾字符
-  {head:3}   前 3 字符
-  {tail:4}   尾 4 字符
+  {head:N}   前 N 字符（如 {head:3}）
+  {tail:N}   尾 N 字符（如 {tail:4}）
   {prefix}   首个分隔段（如 EID- 里的 EID）
   {digits}   确定性数字串（pseudo）
   {major}    版本主号

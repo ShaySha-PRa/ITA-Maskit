@@ -78,6 +78,9 @@ def render_template(template: str, value: str, pepper: str | None) -> str:
     if "{first}" in template:
         template = template.replace("{first}", value[:1] if value else "")
 
+    if "{second}" in template:
+        template = template.replace("{second}", value[1:2] if len(value) > 1 else "")
+
     if "{last}" in template:
         template = template.replace("{last}", value[-1:] if value else "")
 

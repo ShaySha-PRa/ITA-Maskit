@@ -22,10 +22,13 @@ def mask_excel_file(
     output_path: str | Path,
     ruleset: RuleSet,
     pepper: str | None,
+    details: dict | None = None,
 ) -> int:
     """脱敏 Excel（全部 sheet）→ Excel，返回总处理行数。
 
     用 openpyxl 读取全部 sheet → 逐 sheet 转 Polars 脱敏 → 写回。
+    details（可选）：传入 dict 时，记录每个 sheet 的处理信息
+    （sheet 名、行数、脱敏单元格数），供 GUI 展示。
     """
     src = Path(input_path)
     dst = Path(output_path)
@@ -46,6 +49,7 @@ def mask_excel_file(
     import polars as pl
 
     total = 0
+    sheet_info = []
     for ws in wb.worksheets:
         # 读取 sheet 数据为 list[list]
         rows = list(ws.iter_rows(values_only=True))
@@ -63,10 +67,22 @@ def mask_excel_file(
             for row in data
         ]
         df = pl.DataFrame(data, schema=header, orient="row")
-        masked, _ = _mask_dataframe(df, ruleset, pepper)
+        masked, masked_count = _mask_dataframe(df, ruleset, pepper)
         total += masked.height
+        # 记录每个 sheet 的处理信息（供 GUI 展示）
+        sheet_info.append({
+            "sheet": ws.title,
+            "rows": masked.height,
+            "masked_cells": masked_count,
+            "columns": len(header),
+        })
         # 写回该 sheet
         _write_sheet(ws, header, masked)
+
+    if details is not None:
+        details["sheets"] = sheet_info
+    wb.save(dst)
+    return total
 
     wb.save(dst)
     return total

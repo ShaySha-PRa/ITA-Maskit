@@ -63,17 +63,23 @@ class MaskWorker(QThread):
             src = Path(f)
             out = src.with_name(src.stem + "_masked" + src.suffix)
             try:
-                # 进度回调：处理/脱敏计数
-                def _cb(processed: int, masked: int):
-                    self.total_stats.add(processed=processed, masked=masked)
-                    self.stats.emit(self.total_stats.processed, self.total_stats.masked)
-
+                details = {}
                 mask_file(
                     str(src), str(out), ruleset, self.pepper,
                     strategy=self.strategy, scan_names=self.scan_names,
+                    details=details,
                 )
                 self.total_stats.files += 1
-                self.finished_file.emit(src.name, "成功", str(out))
+                # Excel 多 sheet：显示各 sheet 处理信息
+                info = src.name
+                sheets = details.get("sheets")
+                if sheets:
+                    masked_sheets = [s for s in sheets if s["masked_cells"] > 0]
+                    info += f" ({len(sheets)} sheets"
+                    if masked_sheets:
+                        info += f", {len(masked_sheets)} sheets含脱敏"
+                    info += ")"
+                self.finished_file.emit(info, "成功", str(out))
             except Exception as exc:  # noqa: BLE001 — GUI 层捕获所有异常显示在结果列表
                 self.finished_file.emit(src.name, f"失败: {exc}", "")
             self.progress.emit(i + 1, total, 100 if i == total - 1 else int((i + 1) / total * 100))

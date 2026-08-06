@@ -27,12 +27,14 @@ def mask_file(
     scan_names: bool = False,
     person_list: set[str] | None = None,
     image_crop: bool = False,
+    details: dict | None = None,
 ) -> int:
     """统一脱敏入口：按扩展名分发，返回处理行数/页数/段数。
 
     表格格式（CSV/Excel/JSON）：按列脱敏，strategy 由 ruleset 每列决定。
     文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定。
     图片格式（PNG/JPG，beta）：需 image_crop=True 启用 OCR 裁剪。
+    details（可选）：传 dict 时记录格式相关的处理详情（如 Excel 各 sheet 信息）。
     """
     ext = _ext(input_path)
 
@@ -44,7 +46,7 @@ def mask_file(
     if ext in {".xlsx", ".xls"}:
         from maskit.io.excelio import mask_excel_file
 
-        return mask_excel_file(input_path, output_path, ruleset, pepper)
+        return mask_excel_file(input_path, output_path, ruleset, pepper, details)
 
     if ext in {".json", ".jsonl", ".ndjson"}:
         from maskit.io.jsonio import mask_json_file

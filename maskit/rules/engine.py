@@ -178,6 +178,41 @@ def _apply_single_count(
 # （会匹配 2.5/2024.1.1 等日期小数），排除。
 _VALUE_SCAN_RULES = {"email", "ip", "id_card"}
 
+# 中文人名检测（排除词表 + 姓氏开头）：
+# 值级检测对「排除词表外 + 姓氏开头 + 2-4字纯中文」判定为人名，按 name 规则脱敏。
+# 覆盖横排选手/教练收入表里的人名（无列名可依）。
+_COMMON_SURNAMES = set(
+    "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹"
+    "喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪"
+    "汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹"
+    "狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童"
+    "颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁"
+    "宣贲邓郁单杭洪包诸左石崔吉钮龚党刘姬"
+)
+
+# 排除词表：常见 2-4 字普通中文词（不是人名），避免误伤
+_COMMON_NON_NAMES = {
+    "一队", "万元", "主体", "俱乐部", "债务类别", "入职时间", "关联关系", "其他",
+    "其他费用", "分析师", "原币单位", "变更类型", "合计", "后期", "品牌主管",
+    "品牌策划", "商务总监", "商务经理", "备注", "奖金分成", "姓名", "实习生",
+    "平面设计", "应付账款", "总人数", "序号", "岗位", "应发", "实发", "扣款",
+    "社保", "公积金", "个税", "实付", "应收", "应付", "账款", "工资", "薪酬",
+    "金额", "费用", "类型", "说明", "名称", "单位", "时期", "期间", "摘要",
+    "项目", "科目", "凭证", "日期", "时间", "人员", "部门", "职务", "级别",
+    "总计", "小计", "大写", "人民币", "银行", "账号", "账户", "审核",
+    "制表", "复核", "批准", "录入", "提交", "状态", "进度", "类别", "来源",
+}
+
+
+def _is_person_name(value: str) -> bool:
+    """判断值是否为中文人名（排除词表外 + 姓氏开头 + 2-4字纯中文）。"""
+    v = value.strip()
+    if not re.fullmatch(r"[一-鿿]{2,4}", v):
+        return False
+    if v in _COMMON_NON_NAMES:
+        return False
+    return v[0] in _COMMON_SURNAMES
+
 
 def _build_value_scan_regexes(ruleset: RuleSet) -> list[tuple[RuleDef, re.Pattern]]:
     """构建值级检测正则（仅强特征白名单规则）。
@@ -202,11 +237,14 @@ def _value_scan_single(
     regexes: list[tuple[RuleDef, re.Pattern]],
     strategy: str,
     pepper: str | None,
+    name_rule: RuleDef | None = None,
 ) -> dict:
     """值级检测：值**整体**命中某敏感正则 → 用该规则脱敏。
 
-    一个值命中多个规则 → 取正则最长的（更具体优先）。
-    返回 {"masked_value", "changed"}，与 _apply_single_count 一致。
+    - 强特征规则（email/ip/id_card）整值匹配
+    - 中文人名检测：排除词表外 + 姓氏开头的 2-4 字纯中文 → 按 name 脱敏
+    - 公式保护：=SUM(...) 开头不检测
+    返回 {"masked_value", "changed"}。
     """
     v = value if value is not None else ""
     if not v.strip():
@@ -221,6 +259,9 @@ def _value_scan_single(
         if regex.fullmatch(v.strip()) and len(d.match) > best_len:
             best = d
             best_len = len(d.match)
+    # 中文人名检测（排除词表外 + 姓氏开头）
+    if best is None and name_rule is not None and _is_person_name(v):
+        best = name_rule
     if best is None:
         return {"masked_value": value, "changed": 0}
     out = _apply_single(best, v.strip(), strategy, pepper)
@@ -272,14 +313,15 @@ def apply_rules(
     # 值级检测：未匹配列的值跑敏感正则（补列名漏检）
     if value_scan:
         regexes = _build_value_scan_regexes(ruleset)
-        if regexes:
+        name_rule = ruleset.defs.get("name")
+        if regexes or name_rule:
             for col_name in out.columns:
                 if col_name in matched_cols:
                     continue  # 已匹配列不重复
                 col = pl.col(col_name).cast(pl.Utf8)
                 result = col.map_elements(
-                    lambda v, rx=regexes, p=pepper: _value_scan_single(
-                        v if v is not None else "", rx, "mask", p
+                    lambda v, rx=regexes, nr=name_rule, p=pepper: _value_scan_single(
+                        v if v is not None else "", rx, "mask", p, nr
                     ),
                     return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
                 ).alias("__vs_result")

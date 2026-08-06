@@ -56,6 +56,9 @@ def mask_excel_file(
         if not data:
             continue
         df = pl.DataFrame(data, schema=header, orient="row")
+        # 统一转成字符串列：避免 date/datetime 列（datetime[μs]）在脱敏/写回时
+        # 与字符串列类型冲突（真实 Excel 常有日期列）
+        df = df.with_columns([pl.col(c).cast(pl.Utf8) for c in df.columns])
         masked, _ = _mask_dataframe(df, ruleset, pepper)
         total += masked.height
         # 写回该 sheet

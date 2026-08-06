@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ita-maskit"
-version = "0.3.1"
+version = "0.4.0"
 description = "ITA data masking CLI — 高性能数据脱敏工具"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,6 +31,10 @@ image = [
 # LLM 规则生成（可选增强）：maskit rules generate，需配置 MASKIT_LLM_API_KEY
 llm = [
     "httpx>=0.24",
+]
+# Windows 桌面 GUI（PyQt5）：python -m maskit.gui_app
+gui = [
+    "PyQt5>=5.15",
 ]
 dev = [
     "pytest>=7.0",

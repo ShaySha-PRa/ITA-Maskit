@@ -127,30 +127,43 @@ def _pseudo_single(rule: RuleDef, value: str, pepper: str) -> str:
 
 
 def _apply_single(rule: RuleDef, value: str, strategy: str, pepper: str | None) -> str:
-    """按策略派发单值处理（供 Polars map_elements 调用）。"""
+    """按策略派发单值处理，返回脱敏后的字符串（兼容单值场景）。"""
+    return _apply_single_count(rule, value, strategy, pepper)["masked_value"]
+
+
+def _apply_single_count(
+    rule: RuleDef, value: str, strategy: str, pepper: str | None
+) -> dict:
+    """按策略派发单值处理，返回 dict（Polars struct 用）: {masked_value, changed}。
+
+    GUI 需要「脱敏了多少数据」计数，故在单值层返回是否改变。
+    """
     if strategy == "mask":
-        return _mask_single(rule, value)
-    if strategy == "pseudo":
+        out = _mask_single(rule, value)
+    elif strategy == "pseudo":
         if pepper is None:
             raise ValueError(
                 "pseudo 策略激活但未提供 --pepper（或 MASKIT_PEPPER），拒绝静默执行"
             )
-        return _pseudo_single(rule, value, pepper)
-    raise ValueError(f"非法策略: {strategy}")
+        out = _pseudo_single(rule, value, pepper)
+    else:
+        raise ValueError(f"非法策略: {strategy}")
+    return {"masked_value": out, "changed": 1 if out != value else 0}
 
 
 def apply_rules(
     df: pl.DataFrame,
     ruleset: RuleSet,
     pepper: str | None,
-) -> pl.DataFrame:
-    """对 DataFrame 应用规则集，返回脱敏后的 DataFrame。
+) -> tuple[pl.DataFrame, int]:
+    """对 DataFrame 应用规则集，返回 (脱敏后 DataFrame, 脱敏单元格数)。
 
     - 映射列按规则/策略处理
     - 未映射列原样透传
     - null 保持 null
     """
     out = df
+    total_masked = 0
     for spec in ruleset.specs:
         if spec.column not in out.columns:
             raise ValueError(f"规则引用了不存在的列: {spec.column!r}")
@@ -160,16 +173,22 @@ def apply_rules(
         if rule.default_disabled:
             raise ValueError(f"规则 {spec.rule!r} 默认关闭，请在 YAML 中显式启用")
 
-        col = pl.col(spec.column)
-        expr = col.map_elements(
-            # B023：用默认参数绑定循环变量，避免闭包捕获引用导致迭代串值
-            lambda v, r=rule, s=spec: _apply_single(
+        col = pl.col(spec.column).cast(pl.Utf8)
+        # map_elements 返回 dict {masked_value, changed}，拆出值列 + 计数列
+        result = col.map_elements(
+            lambda v, r=rule, s=spec: _apply_single_count(
                 r, v if v is not None else "", s.strategy, pepper
             ),
-            return_dtype=pl.Utf8,
+            return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
+        ).alias("__masked_result")
+        # 展开
+        out = out.with_columns(
+            result.struct.field("masked_value").alias(spec.column),
+            result.struct.field("changed").alias("__changed"),
         )
-        out = out.with_columns(expr.alias(spec.column))
-    return out
+        total_masked += int(out["__changed"].sum())
+        out = out.drop("__changed")
+    return out, total_masked
 
 
 def validate_ruleset(ruleset: RuleSet) -> None:

@@ -56,7 +56,7 @@ def mask_excel_file(
         if not data:
             continue
         df = pl.DataFrame(data, schema=header, orient="row")
-        masked = _mask_dataframe(df, ruleset, pepper)
+        masked, _ = _mask_dataframe(df, ruleset, pepper)
         total += masked.height
         # 写回该 sheet
         _write_sheet(ws, header, masked)

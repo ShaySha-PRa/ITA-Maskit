@@ -42,7 +42,7 @@ def mask_json_file(
     if df.height == 0:
         raise ValueError(f"JSON 文件无数据: {src}")
 
-    masked = _mask_dataframe(df, ruleset, pepper)
+    masked, _ = _mask_dataframe(df, ruleset, pepper)
     if masked.height == 0:
         raise ValueError(f"JSON 文件无数据: {src}")
 

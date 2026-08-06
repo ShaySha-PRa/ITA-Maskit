@@ -12,13 +12,17 @@ import polars as pl
 from maskit.rules.defs import RuleSet
 
 
-def _mask_dataframe(df: pl.DataFrame, ruleset: RuleSet, pepper: str | None) -> pl.DataFrame:
-    """对 DataFrame 按规则集脱敏（CSV/Excel/JSON 共用）。
+def _mask_dataframe(
+    df: pl.DataFrame, ruleset: RuleSet, pepper: str | None
+) -> tuple[pl.DataFrame, int]:
+    """对 DataFrame 按规则集脱敏，返回 (脱敏后 DataFrame, 脱敏单元格数)。
 
     - 映射列按规则/策略处理，未映射列原样透传
     - 规则引用缺列：显式 YAML → 硬错误；默认规则集（optional）→ 跳过
     - null 保持 null
     """
+    from maskit.rules.engine import apply_rules
+
     cols = df.columns
     effective_specs = []
     for spec in ruleset.specs:
@@ -28,10 +32,12 @@ def _mask_dataframe(df: pl.DataFrame, ruleset: RuleSet, pepper: str | None) -> p
             raise ValueError(f"规则引用了不存在的列: {spec.column!r}")
         effective_specs.append(spec)
 
-    out = df.select(
-        [_apply_column_expr(pl.col(c), c, effective_specs, ruleset, pepper) for c in cols]
-    )
-    return out
+    # 用临时规则集（仅有效列）调用 apply_rules 获取计数
+    from maskit.rules.defs import RuleSet
+
+    effective_ruleset = RuleSet(defs=ruleset.defs, specs=effective_specs)
+    masked_df, masked_count = apply_rules(df, effective_ruleset, pepper)
+    return masked_df, masked_count
 
 
 def mask_csv_file(
@@ -60,42 +66,10 @@ def mask_csv_file(
     if first.height == 0:
         raise ValueError(f"输入文件无数据: {src}")
 
-    df = _mask_dataframe(lf.collect(), ruleset, pepper)
+    df, _ = _mask_dataframe(lf.collect(), ruleset, pepper)
     if df.height == 0:
         raise ValueError(f"输入文件无数据: {src}")
 
     df.write_csv(dst)
     return df.height
 
-
-def _apply_column_expr(
-    col: pl.Expr,
-    column: str,
-    effective_specs: list,
-    ruleset: RuleSet,
-    pepper: str | None,
-) -> pl.Expr:
-    """为某一列构造脱敏表达式。未映射列 → 原样透传。"""
-    spec = next((s for s in effective_specs if s.column == column), None)
-    if spec is None:
-        return col  # 透传
-
-    rule = ruleset.defs.get(spec.rule)
-    if rule is None:
-        raise ValueError(f"规则 {spec.rule!r} 未定义")
-    if rule.default_disabled:
-        raise ValueError(f"规则 {spec.rule!r} 默认关闭，请在 YAML 中显式启用")
-
-    # 用 map_elements 应用单值处理函数（engine 内部处理 mask/pseudo 分支）
-    from maskit.rules.engine import _apply_single
-
-    # B023：用默认参数绑定循环变量，避免闭包捕获引用
-    return (
-        col.cast(pl.Utf8)
-        .map_elements(
-            lambda v, r=rule, s=spec: _apply_single(
-                r, v if v is not None else "", s.strategy, pepper
-            ),
-            return_dtype=pl.Utf8,
-        )
-    )

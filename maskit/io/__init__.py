@@ -28,12 +28,14 @@ def mask_file(
     person_list: set[str] | None = None,
     image_crop: bool = False,
     details: dict | None = None,
+    pdf_redact: bool = False,
 ) -> int:
     """统一脱敏入口：按扩展名分发，返回处理行数/页数/段数。
 
     表格格式（CSV/Excel/JSON）：按列脱敏，strategy 由 ruleset 每列决定。
     文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定。
     图片格式（PNG/JPG，beta）：需 image_crop=True 启用 OCR 裁剪。
+    PDF：默认提取重排；pdf_redact=True 时用 PyMuPDF 原样遮罩（beta）。
     details（可选）：传 dict 时记录格式相关的处理详情（如 Excel 各 sheet 信息）。
     """
     ext = _ext(input_path)
@@ -66,7 +68,10 @@ def mask_file(
     if ext == ".pdf":
         from maskit.io.pdfio import mask_pdf_file
 
-        return mask_pdf_file(input_path, output_path, ruleset, pepper, strategy, scan_names, person_list)
+        return mask_pdf_file(
+            input_path, output_path, ruleset, pepper, strategy, scan_names, person_list,
+            pdf_redact=pdf_redact,
+        )
 
     if ext == ".docx":
         from maskit.io.docxio import mask_docx_file

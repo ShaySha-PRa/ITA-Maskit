@@ -26,8 +26,8 @@ Write-Host "=== Upgrade pip ==="
 Invoke-Py -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
 
-Write-Host "=== Install project deps (CLI + GUI + image + LLM) ==="
-Invoke-Py -m pip install -e ".[gui,image,llm]"
+Write-Host "=== Install project deps (CLI + GUI + image + LLM + pdf) ==="
+Invoke-Py -m pip install -e ".[gui,image,llm,pdf]"
 if ($LASTEXITCODE -ne 0) { throw "dependency install failed" }
 
 Write-Host "=== Install PyInstaller ==="

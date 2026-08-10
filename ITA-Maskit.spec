@@ -30,14 +30,31 @@ hiddenimports += [
     "yaml",           # 规则 YAML
     "openpyxl",       # Excel
     "xlsxwriter",     # Excel 写出
-    "pypdf",          # PDF 读取
-    "reportlab",      # PDF 写出
+    "pypdf",          # PDF 读取（旧路径）
+    "reportlab",      # PDF 写出（旧路径）
+    "fitz",           # PDF 原样遮罩（beta，PyMuPDF）
     "docx",           # Word
     "extract_msg",    # Outlook .msg
     "httpx",          # LLM 规则生成（GUI AI 生成）
     "PIL",            # 图片脱敏（beta）
     "pytesseract",    # 图片脱敏（beta，需另装 tesseract 二进制）
 ]
+
+# pymupdf 含原生二进制，全量收集
+try:
+    fitz_datas, fitz_binaries, fitz_hidden = collect_all("fitz")
+    datas += fitz_datas
+    binaries += fitz_binaries
+    hiddenimports += fitz_hidden
+except Exception:
+    pass
+try:
+    pymupdf_datas, pymupdf_binaries, pymupdf_hidden = collect_all("pymupdf")
+    datas += pymupdf_datas
+    binaries += pymupdf_binaries
+    hiddenimports += pymupdf_hidden
+except Exception:
+    pass
 
 a = Analysis(
     ["maskit/gui_app.py"],

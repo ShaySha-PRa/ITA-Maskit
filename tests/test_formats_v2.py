@@ -302,6 +302,77 @@ def test_pdf_end_to_end(tmp_path):
     assert "138" in text
 
 
+def test_pdf_redact_requires_flag_or_falls_back(tmp_path):
+    """未开 pdf_redact 时仍走旧路径（不要求 pymupdf）。"""
+    from pypdf import PdfReader
+    from reportlab.pdfgen import canvas
+
+    src = tmp_path / "in.pdf"
+    out = tmp_path / "out.pdf"
+    c = canvas.Canvas(str(src))
+    c.drawString(100, 750, "mail alice@corp.example")
+    c.save()
+    pages = mask_file(src, out, load_ruleset(), None, strategy="mask", pdf_redact=False)
+    assert pages == 1
+    assert "alice@corp.example" not in PdfReader(str(out)).pages[0].extract_text()
+
+
+def test_pdf_redact_beta_end_to_end(tmp_path):
+    """PDF 原样遮罩（beta）：保留页尺寸，明文邮箱被遮罩。"""
+    pytest.importorskip("fitz")
+    import fitz
+    from reportlab.pdfgen import canvas
+
+    src = tmp_path / "in.pdf"
+    out = tmp_path / "out.pdf"
+    c = canvas.Canvas(str(src))
+    c.drawString(100, 750, "Contact alice@corp.example here")
+    c.save()
+
+    src_doc = fitz.open(str(src))
+    src_rect = src_doc[0].rect
+    src_pages = src_doc.page_count
+    src_doc.close()
+
+    pages = mask_file(src, out, load_ruleset(), None, strategy="mask", pdf_redact=True)
+    assert pages == src_pages
+
+    out_doc = fitz.open(str(out))
+    assert out_doc.page_count == src_pages
+    assert out_doc[0].rect == src_rect
+    text = out_doc[0].get_text() or ""
+    out_doc.close()
+    assert "alice@corp.example" not in text
+
+
+def test_pdf_redact_missing_pymupdf(tmp_path, monkeypatch):
+    """未安装 pymupdf 时 --pdf-redact 给出清晰错误。"""
+    import builtins
+    import sys
+
+    import maskit.io.pdfio as pdfio
+    from reportlab.pdfgen import canvas
+
+    src = tmp_path / "in.pdf"
+    out = tmp_path / "out.pdf"
+    c = canvas.Canvas(str(src))
+    c.drawString(100, 750, "alice@corp.example")
+    c.save()
+
+    monkeypatch.delitem(sys.modules, "fitz", raising=False)
+    monkeypatch.delitem(sys.modules, "pymupdf", raising=False)
+    real_import = builtins.__import__
+
+    def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "fitz" or name.startswith("fitz."):
+            raise ImportError("no fitz")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    with pytest.raises(ValueError, match="pymupdf"):
+        pdfio.mask_pdf_file(src, out, load_ruleset(), None, pdf_redact=True)
+
+
 # --- 统一入口分发 ---
 
 

@@ -9,7 +9,7 @@
 | 能力 | 说明 |
 |------|------|
 | **Windows 桌面 GUI** | 拖拽文件 → 脱敏 → 实时显示处理/脱敏/进度，面向不懂代码的审计人员 |
-| **8 类内置敏感字段** | 姓名、邮箱、IP（全遮盖 `*.*.*.*`）、手机号、工号、账号、公司名、软件版本号 |
+| **10 类内置敏感字段** | 姓名、邮箱、IP（全遮盖 `*.*.*.*`）、手机号、工号、账号、公司名、软件版本号、身份证号、银行卡号（另有 ssn/credit_card 默认关闭） |
 | **10 种文件格式** | CSV / Excel / JSON / JSONL / 邮件(.eml) / Outlook(.msg) / PDF / Word(.docx) |
 | **双引擎架构** | 表格引擎（按列脱敏）+ 文本引擎（全文 PII 扫描） |
 | **两种脱敏策略** | `mask`（部分遮盖，保留可读性）+ `pseudo`（确定性伪名化） |
@@ -70,7 +70,7 @@ maskit audit
 ```bash
 git clone git@github.com:ShaySha-PRa/ITA-Maskit.git
 cd ITA-Maskit
-pip install -e ".[gui,image,llm]"   # 全部依赖（CLI + GUI + 图片 + LLM 规则生成）
+pip install -e ".[gui,image,llm,pdf]"   # 全部依赖（CLI + GUI + 图片 + LLM + PDF原样遮罩）
 python -m maskit.gui_app            # 启动 GUI
 # 或用 CLI：maskit mask data.csv --pepper <密钥>
 ```
@@ -93,17 +93,19 @@ GitHub → Actions → 最新一次运行 → **Artifacts** → 下载 `ITA-Mask
 
 > **exe 注意**：
 > - 图片脱敏（beta）需安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) 二进制；**中文/英文语言包首次使用时自动下载**（约 28MB，无需手动装）
+> - PDF 原样遮罩（beta）已打入 exe；勾选后启用，默认仍走提取重排
 > - AI 规则生成需设置环境变量 `MASKIT_LLM_API_KEY`
 
 **GUI 功能**：
 - 拖拽/浏览选择文件（支持多文件批量）
-- 选项：遮盖姓名/公司名、确定性伪名化（需密钥）
+- 选项：遮盖姓名/公司名、确定性伪名化（需密钥）、**人员清单（推荐）**
 - 实时显示：**处理数据数、脱敏数据数、总体进度条**
 - 结果列表：文件名/状态/输出路径，一键打开结果文件夹
 - 异步处理：大文件不冻结界面
 - 规则管理（可视化编辑，描述代替正则）：规则集新建/切换/导入导出、人员清单全覆盖脱敏
 - **预验证**：正式脱敏前预览哪些列会被脱敏、命中多少、改了什么样例，未命中列黄标提示（不产出文件）
 - **图片脱敏（beta）**：勾选后 OCR 定位图片敏感区域并裁剪，中文/英文语言包首次自动下载
+- **PDF原样遮罩（beta）**：勾选后用 PyMuPDF 黑块保留版式（AGPL）；默认关闭走提取重排
 - **AI 生成规则**：一句话描述 **或** 上传敏感信息规定文档（如 2026 年敏感信息规则，PDF/Word/邮件/文本）→ AI 解析并自动生成对应规则（只发规定/描述，脱敏数据永不出本地）
 
 **性能消耗**（普通办公电脑 4-8GB 内存可流畅运行）：
@@ -152,7 +154,7 @@ maskit mask report.pdf --strategy pseudo --pepper <密钥> -o report_masked.pdf
 # 文本格式 + 识别姓名/公司名（--scan-names，语义前缀+词表，纯本地）
 maskit mask mail.eml --scan-names -o mail_masked.eml
 
-# 文本格式 + 全量人员清单（--person-list，动态词表，识别不易判断的人名）
+# 文本格式 + 全量人员清单（--person-list，推荐；动态词表，识别不易判断的人名）
 maskit mask mail.eml --scan-names --person-list people.csv -o mail_masked.eml
 ```
 
@@ -162,7 +164,7 @@ maskit mask mail.eml --scan-names --person-list people.csv -o mail_masked.eml
 
 - **语义前缀**：`申请人：张伟`、`供应商：亚玛芬体育` → 识别并遮盖
 - **内置词表**：审计常见姓名/公司（张伟、亚玛芬体育、MayAir…）
-- **全量人员清单**（`--person-list people.csv`）：导入公司全量用户/人员清单（含 `name`/`姓名`/`employee_id` 列），清单里**所有人名**全文匹配脱敏——即使正文里没有「申请人：」这类前缀也能识别
+- **全量人员清单（推荐，`--person-list people.csv`）**：导入公司全量用户/人员清单（含 `name`/`姓名`/`employee_id` 列），清单里**所有人名**全文匹配脱敏——即使正文里没有「申请人：」这类前缀也能识别。表格值级脱敏同样生效：**有清单时关闭姓氏启发式**（精确匹配，防误伤）；无清单时回退启发式并提示建议上传清单
 
 **数据安全**：全部本地正则 + 本地 CSV，**无模型、无网络、数据不出机器**。
 
@@ -260,12 +262,30 @@ rules:
 
 ## 已知局限
 
-- **PDF 是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。如需原样遮盖需 PDF 图层级技术（v3 或独立项目）。
-- **name/company 默认不扫文本**：匹配正则太宽，默认跳过防误伤；用 `--scan-names` 启用（语义前缀 + 词表 + 可选人员清单，纯本地）。
+- **PDF 默认是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。需要保版式证据时，用 **PDF 原样遮罩（beta）**（见下）。
+- **name/company 默认不扫文本**：匹配正则太宽，默认跳过防误伤；用 `--scan-names` 启用（语义前缀 + 词表 + 可选人员清单，纯本地）。表格值级姓名：推荐 `--person-list`；有清单时关闭姓氏启发式。
 - **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。
 - **.msg 输入输出 .eml**：Outlook `.msg` 是私有 OLE 格式，Python 无库能可靠回写，因此脱敏后输出标准 `.eml`（可打开/转发/作证据）。`.msg→.eml` 的 MIME boundary 每次随机，输出**内容确定但非逐字节一致**。
 - **邮件只支持 .eml/.msg**：Outlook 其它私有格式不在范围。
 - **图片脱敏是 beta**：`--image-crop` 启用，OCR 定位敏感文字区域并**裁剪掉**（图片变小）。需手动安装 tesseract + 中文语言包（`pip install -e ".[image]"` + 系统 tesseract）。
+
+## PDF 原样遮罩（beta，默认关闭）
+
+在原 PDF 页上定位敏感文字并黑块遮罩（或 pseudo 填伪名），**保留版式/图片**。与默认的「提取重排」旧路径并存；未决定是否永久切换前，需显式启用。
+
+```bash
+pip install -e ".[pdf]"   # 安装 PyMuPDF（AGPL 许可）
+
+# CLI
+maskit mask report.pdf --pdf-redact -o report_masked.pdf
+
+# 未传 --pdf-redact 时仍走提取重排旧路径
+maskit mask report.pdf -o report_masked.pdf
+```
+
+- **默认关闭**：不传 `--pdf-redact` / GUI 不勾选「PDF原样遮罩(beta)」→ 旧路径
+- **许可**：PyMuPDF 为 **AGPL**；商业分发前请自行确认合规
+- **数据安全**：全程本地，脱敏数据不出机器
 
 ## 版本历史
 
@@ -298,7 +318,7 @@ rules:
 
 ```bash
 pip install -e ".[dev]"
-pytest            # 91 个测试，覆盖确定性/边缘/性能/各格式端到端/姓名识别/LLM生成/统计计数
+pytest            # ~168 个测试，覆盖确定性/边缘/性能/各格式端到端/姓名识别/LLM生成/统计计数
 ruff check .      # 代码规范
 ```
 

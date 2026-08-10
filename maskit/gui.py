@@ -50,7 +50,8 @@ class MaskWorker(QThread):
 
     def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
                  ruleset_name: str | None = None, output_dir: str | None = None,
-                 person_list: set[str] | None = None, image_crop: bool = False):
+                 person_list: set[str] | None = None, image_crop: bool = False,
+                 pdf_redact: bool = False):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
@@ -60,6 +61,7 @@ class MaskWorker(QThread):
         self.output_dir = output_dir
         self.person_list = person_list
         self.image_crop = image_crop
+        self.pdf_redact = pdf_redact
         self.total_stats = MaskStats()
 
     def run(self):
@@ -80,6 +82,7 @@ class MaskWorker(QThread):
                     strategy=self.strategy, scan_names=self.scan_names,
                     person_list=self.person_list,
                     image_crop=self.image_crop,
+                    pdf_redact=self.pdf_redact,
                     details=details,
                 )
                 self.total_stats.files += 1
@@ -193,11 +196,15 @@ class MainWindow(QMainWindow):
         out_row.addWidget(out_browse)
         layout.addLayout(out_row)
 
-        # 人员清单
+        # 人员清单（推荐主路径：精确匹配，有清单时关闭姓氏启发式）
         pl_row = QHBoxLayout()
-        pl_label = QLabel("人员清单:")
+        pl_label = QLabel("人员清单（推荐）:")
         self.pl_input = QLineEdit()
-        self.pl_input.setPlaceholderText("选公司人员名单 CSV（清单里的人员名全覆盖脱敏）")
+        self.pl_input.setPlaceholderText("推荐：上传公司人员名单 CSV（精确匹配，防误伤）")
+        self.pl_input.setToolTip(
+            "加载后表格值级脱敏以清单精确匹配为主，并关闭姓氏启发式；"
+            "不加载则回退到姓氏+排除词表启发式（可能漏/误伤）。"
+        )
         pl_browse = QPushButton("浏览...")
         pl_browse.clicked.connect(self._browse_person_list)
         pl_row.addWidget(pl_label)
@@ -217,9 +224,15 @@ class MainWindow(QMainWindow):
         self.pseudo_cb.toggled.connect(self.pepper_input.setEnabled)
         self.image_cb = QCheckBox("图片脱敏(beta)")
         self.image_cb.setToolTip("对图片 OCR 定位敏感文字区域并裁剪掉；首次使用自动下载中文/英文语言包，需已安装 tesseract")
+        self.pdf_redact_cb = QCheckBox("PDF原样遮罩(beta)")
+        self.pdf_redact_cb.setToolTip(
+            "用 PyMuPDF 在原 PDF 上黑块遮罩敏感文字，保留版式（AGPL 依赖）；"
+            "默认关闭，未勾选时仍走提取重排旧路径。"
+        )
         options_row.addWidget(self.scan_names_cb)
         options_row.addWidget(self.pseudo_cb)
         options_row.addWidget(self.image_cb)
+        options_row.addWidget(self.pdf_redact_cb)
         options_row.addWidget(self.pepper_input, 1)
         layout.addLayout(options_row)
 
@@ -414,6 +427,25 @@ class MainWindow(QMainWindow):
                 "请确保已安装 tesseract OCR。",
             )
 
+        # PDF 原样遮罩（beta）提示
+        if self.pdf_redact_cb.isChecked() and any(
+            Path(f).suffix.lower() == ".pdf" for f in self.files
+        ):
+            QMessageBox.information(
+                self, "PDF原样遮罩（beta）",
+                "将在原 PDF 上用黑块遮罩敏感文字，保留版式。\n"
+                "依赖 PyMuPDF（AGPL）；未安装时会报错。\n"
+                "未勾选时仍使用提取重排的旧路径。",
+            )
+
+        # 未加载人员清单：非阻断提示（姓名依赖启发式，可能漏/误伤）
+        if not self.person_list:
+            QMessageBox.information(
+                self, "建议上传人员清单",
+                "未加载人员清单：姓名将依赖姓氏启发式，可能漏脱敏或误伤。\n"
+                "建议上传公司人员名单 CSV（精确匹配，有清单时自动关闭启发式）。",
+            )
+
         self.start_btn.setEnabled(False)
         self.result_table.setRowCount(0)
         self.processed_label.setText("处理数据: 0")
@@ -428,6 +460,7 @@ class MainWindow(QMainWindow):
             ruleset_name=ruleset_name, output_dir=output_dir,
             person_list=self.person_list,
             image_crop=self.image_cb.isChecked(),
+            pdf_redact=self.pdf_redact_cb.isChecked(),
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.stats.connect(self._on_stats)

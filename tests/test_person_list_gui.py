@@ -58,16 +58,42 @@ def test_csv_mask_with_person_list(people, tmp_path):
 
 
 def test_person_list_no_false_positive(people):
-    """清单外名字不因清单被脱敏（除非启发式命中）。"""
+    """有清单时关闭启发式：清单外名字（即使姓氏启发式会命中）也不脱敏。"""
     from maskit.rules.defs import RuleSet
 
     rs = load_ruleset()
     rs_empty = RuleSet(defs=rs.defs, specs=[])
-    # 「策划部」不在清单也不在启发式（非姓氏开头）→ 不脱敏
+    # 「策划部」不在清单；「张伟」姓氏启发式会命中，但有清单时关闭启发式
     df = pl.DataFrame({"字段": ["策划部", "张伟"]})
     masked, count = apply_rules(df, rs_empty, None, person_list=people)
-    assert masked["字段"].to_list()[0] == "策划部"
-    assert count == 1  # 张伟 通过启发式脱敏
+    assert masked["字段"].to_list() == ["策划部", "张伟"]
+    assert count == 0
+
+
+def test_person_list_disables_heuristic(people):
+    """有人员清单时：姓氏启发式关闭，仅清单精确匹配。"""
+    from maskit.rules.defs import RuleSet
+
+    rs = load_ruleset()
+    rs_empty = RuleSet(defs=rs.defs, specs=[])
+    # 张伟不在清单 → 不脱敏；欧阳修在清单 → 脱敏
+    df = pl.DataFrame({"选手": ["张伟", "欧阳修"]})
+    masked, count = apply_rules(df, rs_empty, None, person_list=people)
+    assert masked["选手"].to_list() == ["张伟", "欧*"]
+    assert count == 1
+
+
+def test_heuristic_without_person_list():
+    """无人员清单时：姓氏启发式仍生效。"""
+    from maskit.rules.defs import RuleSet
+
+    rs = load_ruleset()
+    rs_empty = RuleSet(defs=rs.defs, specs=[])
+    df = pl.DataFrame({"选手": ["张伟", "策划部"]})
+    masked, count = apply_rules(df, rs_empty, None, person_list=None)
+    assert masked["选手"].to_list()[0] == "张*"
+    assert masked["选手"].to_list()[1] == "策划部"
+    assert count == 1
 
 
 def test_value_scan_single_with_person_list(people):

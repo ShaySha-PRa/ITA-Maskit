@@ -57,10 +57,17 @@ def mask(
         False, "--scan-names", help="文本格式额外识别姓名/公司名（语义前缀+词表，纯本地）"
     ),
     person_list_file: str | None = typer.Option(
-        None, "--person-list", help="全量人员清单 CSV（含姓名列，动态词表，识别不易判断的人名，纯本地）"
+        None,
+        "--person-list",
+        help="【推荐】全量人员清单 CSV（含姓名列）；有清单时表格关闭姓氏启发式，精确匹配防误伤",
     ),
     image_crop: bool = typer.Option(
         False, "--image-crop", help="图片脱敏（beta）：OCR 定位敏感文字区域并裁剪掉，需安装 tesseract"
+    ),
+    pdf_redact: bool = typer.Option(
+        False,
+        "--pdf-redact",
+        help="PDF 原样遮罩（beta）：PyMuPDF 黑块保留版式（AGPL）；默认关闭，走提取重排旧路径",
     ),
     output: str | None = typer.Option(
         None, "--output", "-o", help="输出路径（缺省为 input.masked.<ext>）"
@@ -95,10 +102,17 @@ def mask(
             from maskit.rules.name_company import load_person_list
 
             person_list = load_person_list(person_list_file)
+        else:
+            typer.echo(
+                "提示: 未提供 --person-list。姓名将依赖启发式，可能漏/误伤；"
+                "建议上传公司人员名单 CSV（有清单时关闭启发式）。",
+                err=True,
+            )
 
         rows = mask_file(
             input_path, out, ruleset, resolved_pepper,
             encoding, strategy, scan_names, person_list, image_crop,
+            pdf_redact=pdf_redact,
         )
 
         # 审计日志

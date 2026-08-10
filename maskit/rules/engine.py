@@ -275,7 +275,7 @@ def _scan_match_rule(
     与 _value_scan_single 的命中判定完全一致，供预验证标注命中规则名。
     - 强特征规则（email/ip/id_card）整值匹配，最长正则优先
     - 人员清单：值在清单里 → name（精确匹配，零误伤）
-    - 中文人名检测：排除词表外 + 姓氏开头的 2-4 字纯中文 → name
+    - 姓氏启发式：仅当**无** person_list 时启用（有清单则关闭，防误伤）
     - 公式保护：=SUM(...) 开头不检测
     """
     v = value if value is not None else ""
@@ -289,7 +289,8 @@ def _scan_match_rule(
             best_len = len(d.match)
     if best is None and name_rule is not None and person_list and v.strip() in person_list:
         best = name_rule
-    if best is None and name_rule is not None and _is_person_name(v):
+    # 有人员清单时关闭姓氏启发式（清单是主路径；清单外名字不误伤）
+    if best is None and name_rule is not None and not person_list and _is_person_name(v):
         best = name_rule
     return best
 
@@ -408,7 +409,8 @@ def apply_rules(
     - 映射列按规则/策略处理
     - 未映射列：value_scan=True 时做值级检测（身份证/手机/邮箱等强正则），
       命中即脱敏（补列名漏检）
-    - person_list：人员清单，值在清单里 → 按 name 脱敏（精确匹配）
+    - person_list：人员清单，值在清单里 → 按 name 脱敏（精确匹配）；
+      有清单时关闭姓氏启发式（清单是主路径）
     - null 保持 null
     """
     out = df

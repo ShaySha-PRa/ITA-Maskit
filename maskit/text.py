@@ -50,30 +50,60 @@ def mask_text_pii(
     """
     if not text:
         return text
-
-    rules = _scanable_rules(ruleset)
-    if not rules:
-        return text
-
-    # 编译所有扫描正则（去锚点）
-    compiled = [
-        (rule, re.compile(_strip_anchors(rule.match)))
-        for rule in rules
-    ]
-
-    # 逐个规则替换，避免规则间互相污染
     out = text
-    for rule, regex in compiled:
-        def _repl(m: re.Match, r=rule) -> str:
-            return _apply_single(r, m.group(0), strategy, pepper)
-
-        out = regex.sub(_repl, out)
-
-    # 可选：name/company 识别（语义前缀 + 词表 + 外部清单，纯本地）
-    if scan_names:
-        out = _mask_names(out, ruleset, pepper, strategy, person_list)
-
+    for original, replacement in iter_text_pii_hits(
+        text, ruleset, pepper, strategy, scan_names, person_list
+    ):
+        out = out.replace(original, replacement)
     return out
+
+
+def iter_text_pii_hits(
+    text: str,
+    ruleset: RuleSet,
+    pepper: str | None,
+    strategy: str = "mask",
+    scan_names: bool = False,
+    person_list: set[str] | None = None,
+) -> list[tuple[str, str]]:
+    """找出文本中的 PII 命中，返回 [(原文, 替换文), ...]（去重，长串优先）。
+
+    供 PDF 原样遮罩等需要定位原文矩形的路径使用。
+    """
+    if not text:
+        return []
+
+    hits: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for rule in _scanable_rules(ruleset):
+        regex = re.compile(_strip_anchors(rule.match))
+        for m in regex.finditer(text):
+            original = m.group(0)
+            if original in seen:
+                continue
+            seen.add(original)
+            hits.append((original, _apply_single(rule, original, strategy, pepper)))
+
+    if scan_names:
+        from maskit.rules.name_company import find_company_names, find_person_names
+
+        name_rule = ruleset.defs.get("name")
+        company_rule = ruleset.defs.get("company")
+        if name_rule:
+            for name in find_person_names(text, person_list):
+                if name not in seen:
+                    seen.add(name)
+                    hits.append((name, _apply_single(name_rule, name, strategy, pepper)))
+        if company_rule:
+            for comp in find_company_names(text):
+                if comp not in seen:
+                    seen.add(comp)
+                    hits.append((comp, _apply_single(company_rule, comp, strategy, pepper)))
+
+    # 长串优先，避免短匹配抢占 search_for
+    hits.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return hits
 
 
 def _mask_names(

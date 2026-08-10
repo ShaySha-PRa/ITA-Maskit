@@ -21,8 +21,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
       - name: Install dependencies
-        # gui extra：GUI 子进程测试需要 PyQt5（offscreen 平台）
-        run: pip install -e ".[dev,gui]"
+        # gui + pdf：GUI 子进程测试需要 PyQt5；PDF beta 测试需要 pymupdf
+        run: pip install -e ".[dev,gui,pdf]"
       - name: Lint (ruff)
         run: ruff check maskit/ tests/
       - name: Test (pytest)
@@ -39,7 +39,7 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: |
-          pip install -e ".[gui,image,llm]"
+          pip install -e ".[gui,image,llm,pdf]"
           pip install pyinstaller
       - name: Build exe
         run: python -m PyInstaller ITA-Maskit.spec --clean --noconfirm

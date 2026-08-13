@@ -89,7 +89,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "pseudo": "C-{hash:8}",
         "normalize": "default",
         "text_scanable": False,  # 无法在文本流中区分公司名
-        "keywords": ["公司", "签约主体", "主体", "vendor", "company", "企业", "单位", "甲方"],
+        "keywords": ["公司", "签约主体", "主体", "vendor", "company", "企业", "往来单位", "签约单位", "供应商", "甲方"],
         "description": "公司名/签约主体，遮盖为只留首字",
     },
     "app_version": {

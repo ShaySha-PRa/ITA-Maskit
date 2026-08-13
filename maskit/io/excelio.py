@@ -10,6 +10,35 @@ from pathlib import Path
 from maskit.io.csvio import _mask_dataframe
 from maskit.rules.defs import RuleSet
 
+
+def cell_to_str(value) -> str:
+    """Excel 单元格转字符串：大整数写成十进制，避免科学计数。"""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if abs(value) >= 1e14:
+            return str(round(value))
+        if value.is_integer():
+            return str(int(value))
+        return str(value)
+    return str(value)
+
+
+def unique_headers(header: list[str]) -> list[str]:
+    """重复列名去重为 备注 / 备注_2，避免 Polars DuplicateError。"""
+    seen: dict[str, int] = {}
+    out: list[str] = []
+    for h in header:
+        n = seen.get(h, 0) + 1
+        seen[h] = n
+        out.append(h if n == 1 else f"{h}_{n}")
+    return out
+
+
 # openpyxl 用于读/写 xlsx（保留多 sheet）
 try:
     from openpyxl import load_workbook
@@ -57,15 +86,18 @@ def mask_excel_file(
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             continue
-        header = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
+        header = unique_headers(
+            [str(c) if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
+        )
         data = rows[1:]
         if not data:
             continue
         # 关键：构造 DataFrame 前把所有值转成字符串。
         # 真实 Excel 同一列常混合 datetime 值、空值、数字（如日期列 + 空行），
         # 直接构造会导致 Polars 报 "could not append value: datetime[μs] ..."
+        # 大整数（身份证常被 Excel 存成数字）写成十进制，禁止科学计数。
         data = [
-            ["" if v is None else str(v) for v in row]
+            [cell_to_str(v) for v in row]
             for row in data
         ]
         df = pl.DataFrame(data, schema=header, orient="row")
@@ -83,9 +115,6 @@ def mask_excel_file(
 
     if details is not None:
         details["sheets"] = sheet_info
-    wb.save(dst)
-    return total
-
     wb.save(dst)
     return total
 

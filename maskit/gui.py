@@ -211,6 +211,9 @@ class MainWindow(QMainWindow):
         pl_row.addWidget(self.pl_input, 1)
         pl_row.addWidget(pl_browse)
         layout.addLayout(pl_row)
+        excel_hint = QLabel("Excel 身份证请设为文本格式，否则可能因数字精度漏检。")
+        excel_hint.setStyleSheet("color: #888; font-size: 11px;")
+        layout.addWidget(excel_hint)
 
         # ② 选项
         options_row = QHBoxLayout()

@@ -16,7 +16,7 @@ import re
 import polars as pl
 
 from maskit.normalize import normalize_default
-from maskit.rules.defs import NORMALIZERS, RuleDef, RuleSet
+from maskit.rules.defs import NORMALIZERS, RuleDef, RuleSet, RuleSpec
 
 
 def _strip_anchors(pattern: str) -> str:
@@ -200,6 +200,18 @@ def _apply_single_count(
 # （会匹配 2.5/2024.1.1 等日期小数），排除。
 _VALUE_SCAN_RULES = {"email", "ip", "id_card", "bank_card"}
 
+# 格内 IP：禁止紧贴 v/字母数字/点（避免 v10.20.30.40），八位 0-255
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)"
+CELL_IP_RE = re.compile(
+    rf"(?<![vV0-9A-Za-z.]){_OCTET}(?:\.{_OCTET}){{3}}(?![0-9A-Za-z])(?!\.\d)"
+)
+_DATE_LIKE_VERSION_RE = re.compile(r"^(19|20)\d{2}[./-]\d{1,2}([./-]\d{1,2})?$")
+_DEPT_LIKE_RE = re.compile(r"^[\u4e00-\u9fff]{1,8}(部|处|科|组|室)$")
+_SPACED_ID_RE = re.compile(r"\d{6}\s+\d{8}\s+\d{3}[\dXx]")
+_DASHED_BANK_RE = re.compile(r"\d{4}[\s\-]\d{4}[\s\-]\d{4}[\s\-]\d{4}(?:[\s\-]\d{1,3})?")
+_EMAIL_BODY_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_CATCHALL_BODIES = {".+", ".*", ".+?", ".*?"}
+
 # 中文人名检测（排除词表 + 姓氏开头）：
 # 值级检测对「排除词表外 + 姓氏开头 + 2-4字纯中文」判定为人名，按 name 规则脱敏。
 # 覆盖横排选手/教练收入表里的人名（无列名可依）。
@@ -231,6 +243,88 @@ _COMMON_NON_NAMES = {
     "总计", "小计", "大写", "人民币", "银行", "账号", "账户", "审核",
     "制表", "复核", "批准", "录入", "提交", "状态", "进度", "类别", "来源",
 }
+
+
+def _to_halfwidth(s: str) -> str:
+    """全角 ASCII（FF01-FF5E）按位映射为半角，下标 1:1。"""
+    chars = []
+    for c in s:
+        o = ord(c)
+        if 0xFF01 <= o <= 0xFF5E:
+            chars.append(chr(o - 0xFEE0))
+        elif c == "\u3000":
+            chars.append(" ")
+        else:
+            chars.append(c)
+    return "".join(chars)
+
+
+def _is_catchall_rule(rule: RuleDef) -> bool:
+    body = rule.match.removeprefix("^").removesuffix("$")
+    return body in _CATCHALL_BODIES
+
+
+def _should_skip_catchall_value(value: str) -> bool:
+    """部门/科室或排除词 → 不套 name/company 的 .+ 模板。"""
+    s = value.strip()
+    if s in _COMMON_NON_NAMES:
+        return True
+    return _DEPT_LIKE_RE.fullmatch(s) is not None
+
+
+def _canonical_for_rule(rule: RuleDef, raw: str) -> str:
+    """列映射/整格检测用的规范化值（空格证号、横线卡号、全角邮箱）。"""
+    if rule.name == "id_card":
+        return re.sub(r"\s+", "", raw)
+    if rule.name == "bank_card":
+        return re.sub(r"[\s\-]", "", raw)
+    if rule.name == "email":
+        return _to_halfwidth(raw)
+    return raw.strip()
+
+
+def iter_pii_variant_hits(
+    text: str,
+    rules_by_name: dict[str, RuleDef],
+    strategy: str,
+    pepper: str | None,
+) -> list[tuple[str, str]]:
+    """格内写法变体：空格身份证、横线卡号、全角邮箱 → [(原文, 替换), ...]。"""
+    hits: list[tuple[str, str]] = []
+    id_rule = rules_by_name.get("id_card")
+    bank_rule = rules_by_name.get("bank_card")
+    email_rule = rules_by_name.get("email")
+    if id_rule:
+        for m in _SPACED_ID_RE.finditer(text):
+            compact = re.sub(r"\s+", "", m.group(0))
+            hits.append((m.group(0), _apply_single(id_rule, compact, strategy, pepper)))
+    if bank_rule:
+        for m in _DASHED_BANK_RE.finditer(text):
+            digits = re.sub(r"[\s\-]", "", m.group(0))
+            if 16 <= len(digits) <= 19:
+                hits.append((m.group(0), _apply_single(bank_rule, digits, strategy, pepper)))
+    if email_rule:
+        half = _to_halfwidth(text)
+        if half != text:
+            for m in _EMAIL_BODY_RE.finditer(half):
+                orig = text[m.start() : m.end()]
+                if orig == m.group(0):
+                    continue
+                hits.append((orig, _apply_single(email_rule, m.group(0), strategy, pepper)))
+    hits.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return hits
+
+
+def apply_pii_variants(
+    text: str,
+    rules_by_name: dict[str, RuleDef],
+    strategy: str,
+    pepper: str | None,
+) -> str:
+    out = text
+    for original, replacement in iter_pii_variant_hits(text, rules_by_name, strategy, pepper):
+        out = out.replace(original, replacement)
+    return out
 
 
 def _is_person_name(value: str) -> bool:
@@ -283,11 +377,13 @@ def _scan_match_rule(
         return None
     best = None
     best_len = -1
+    s = v.strip()
     for d, regex in regexes:
-        if regex.fullmatch(v.strip()) and len(d.match) > best_len:
+        cand = _canonical_for_rule(d, s)
+        if regex.fullmatch(cand) and len(d.match) > best_len:
             best = d
             best_len = len(d.match)
-    if best is None and name_rule is not None and person_list and v.strip() in person_list:
+    if best is None and name_rule is not None and person_list and s in person_list:
         best = name_rule
     # 有人员清单时关闭姓氏启发式（清单是主路径；清单外名字不误伤）
     if best is None and name_rule is not None and not person_list and _is_person_name(v):
@@ -313,8 +409,116 @@ def _value_scan_single(
     best = _scan_match_rule(value, regexes, name_rule, person_list)
     if best is None:
         return {"masked_value": value, "changed": 0}
-    out = _apply_single(best, v.strip(), strategy, pepper)
+    out = _apply_single(best, _canonical_for_rule(best, v.strip()), strategy, pepper)
     return {"masked_value": out, "changed": 1 if out != v.strip() else 0}
+
+
+def _strip_match_anchors(pattern: str) -> str:
+    """去掉 ^ / $，供格内扫描用。"""
+    return pattern.removeprefix("^").removesuffix("$")
+
+
+def _value_matches_rule(rule: RuleDef, value: str) -> bool:
+    """值是否整体命中规则正则（列映射套模板前的校验）。"""
+    s = value.strip()
+    if not s:
+        return False
+    if _is_catchall_rule(rule) and _should_skip_catchall_value(s):
+        return False
+    if rule.name == "app_version" and _DATE_LIKE_VERSION_RE.fullmatch(s):
+        return False
+    cand = _canonical_for_rule(rule, s)
+    try:
+        return re.fullmatch(rule.match, cand) is not None
+    except re.error:
+        return False
+
+
+def _build_cell_scan_regexes(ruleset: RuleSet) -> list[tuple[RuleDef, re.Pattern]]:
+    """格内强特征扫描正则（去锚点，仅 _VALUE_SCAN_RULES）。IP 用带边界的专用正则。"""
+    compiled = []
+    for name in _VALUE_SCAN_RULES:
+        d = ruleset.defs.get(name)
+        if d is None or d.default_disabled:
+            continue
+        try:
+            if name == "ip":
+                compiled.append((d, CELL_IP_RE))
+            else:
+                compiled.append((d, re.compile(_strip_match_anchors(d.match))))
+        except re.error:
+            continue
+    return compiled
+
+
+def _mask_cell_inner(
+    value: str,
+    cell_regexes: list[tuple[RuleDef, re.Pattern]],
+    name_rule: RuleDef | None,
+    pepper: str | None,
+    strategy: str,
+    person_names: tuple[str, ...],
+) -> str:
+    """扫描单元格内部的强特征 PII，可选按人员清单做边界替换。
+
+    不跑姓氏启发式（避免长句误伤）。
+    """
+    from maskit.rules.name_company import mask_person_list_in_text
+
+    out = value
+    for rule, regex in cell_regexes:
+        def _repl(m: re.Match, r=rule) -> str:
+            return _apply_single(r, m.group(0), strategy, pepper)
+
+        out = regex.sub(_repl, out)
+    by_name = {r.name: r for r, _ in cell_regexes}
+    out = apply_pii_variants(out, by_name, strategy, pepper)
+    if name_rule and person_names:
+        out = mask_person_list_in_text(
+            out,
+            set(person_names),
+            lambda n, nr=name_rule: _apply_single(nr, n, strategy, pepper),
+        )
+    return out
+
+
+def _mask_one_cell(
+    value: str | None,
+    mapped_rule: RuleDef | None,
+    mapped_strategy: str,
+    regexes: list[tuple[RuleDef, re.Pattern]],
+    name_rule: RuleDef | None,
+    pepper: str | None,
+    person_list: set[str] | None,
+    cell_regexes: list[tuple[RuleDef, re.Pattern]],
+    person_names: tuple[str, ...],
+    value_scan: bool,
+) -> dict:
+    """单单元格：列映射（先校验）→ 整格值级检测 → 格内扫描。"""
+    raw = value if value is not None else ""
+    if not str(raw).strip():
+        return {"masked_value": raw, "changed": 0}
+    s = str(raw)
+    if s.strip().startswith("="):
+        return {"masked_value": s, "changed": 0}
+
+    fallback_strategy = mapped_strategy if mapped_rule is not None else "mask"
+
+    if mapped_rule is not None and _value_matches_rule(mapped_rule, s):
+        apply_src = _canonical_for_rule(mapped_rule, s)
+        return _apply_single_count(mapped_rule, apply_src, mapped_strategy, pepper)
+
+    if not value_scan:
+        return {"masked_value": s, "changed": 0}
+
+    vs = _value_scan_single(s, regexes, fallback_strategy, pepper, name_rule, person_list)
+    if vs["changed"]:
+        return vs
+
+    inner = _mask_cell_inner(
+        s, cell_regexes, name_rule, pepper, fallback_strategy, person_names
+    )
+    return {"masked_value": inner, "changed": 1 if inner != s else 0}
 
 
 def preview_dataframe(
@@ -345,9 +549,10 @@ def preview_dataframe(
         effective_specs = auto_match_columns(cols)
     spec_by_col = {s.column: s for s in effective_specs}
 
-    # 值级检测（与 apply_rules 一致）
     regexes = _build_value_scan_regexes(ruleset)
+    cell_regexes = _build_cell_scan_regexes(ruleset)
     name_rule = ruleset.defs.get("name")
+    person_names = tuple(sorted(person_list, key=len, reverse=True)) if person_list else ()
 
     results = []
     for col in cols:
@@ -357,33 +562,32 @@ def preview_dataframe(
         strategy_label: str | None = None
         sample_before = sample_after = None
         spec = spec_by_col.get(col)
+        mapped_rule = None
+        mapped_strategy = "mask"
+        if spec is not None:
+            mapped_rule = ruleset.defs.get(spec.rule)
+            if mapped_rule is None:
+                raise ValueError(f"规则 {spec.rule!r} 未定义")
+            mapped_strategy = spec.strategy
+            rule_label = spec.rule
+            strategy_label = spec.strategy
         for v in values:
             if v is None:
                 continue
             total += 1
-            if spec is not None:
-                rule = ruleset.defs.get(spec.rule)
-                if rule is None:
-                    raise ValueError(f"规则 {spec.rule!r} 未定义")
-                if rule_label is None:
-                    rule_label = spec.rule
-                    strategy_label = spec.strategy
-                out = _apply_single_count(rule, v, spec.strategy, pepper)
-            else:
-                # 与 _value_scan_single 一致：命中判定与脱敏都用 strip 后的值
-                rule = _scan_match_rule(v, regexes, name_rule, person_list)
-                if rule is None:
-                    continue
-                if rule_label is None:
-                    rule_label = rule.name
-                    strategy_label = "mask"
-                vs = v.strip()
-                out = _apply_single_count(rule, vs, "mask", pepper)
+            out = _mask_one_cell(
+                v, mapped_rule, mapped_strategy, regexes, name_rule, pepper,
+                person_list, cell_regexes, person_names, value_scan=True,
+            )
             if out["changed"]:
                 hits += 1
                 if sample_before is None:
-                    sample_before = vs if spec is None else v
+                    sample_before = v
                     sample_after = out["masked_value"]
+                if rule_label is None:
+                    hit = _scan_match_rule(v, regexes, name_rule, person_list)
+                    rule_label = hit.name if hit else "in_cell"
+                    strategy_label = "mask"
         results.append({
             "column": col,
             "rule": rule_label,
@@ -406,16 +610,16 @@ def apply_rules(
 ) -> tuple[pl.DataFrame, int]:
     """对 DataFrame 应用规则集，返回 (脱敏后 DataFrame, 脱敏单元格数)。
 
-    - 映射列按规则/策略处理
-    - 未映射列：value_scan=True 时做值级检测（身份证/手机/邮箱等强正则），
-      命中即脱敏（补列名漏检）
-    - person_list：人员清单，值在清单里 → 按 name 脱敏（精确匹配）；
-      有清单时关闭姓氏启发式（清单是主路径）
-    - null 保持 null
+    每个单元格顺序：
+    1. 列已映射且值整体命中该规则正则 → 按列策略整格脱敏
+    2. 否则（value_scan=True）：整格值级检测（强特征 / 人员清单 / 无清单时启发式）
+    3. 仍未命中 → 格内扫描强特征（email/ip/id_card/bank_card）+ 人员清单子串
+
+    - null 保持为空字符串处理后的结果（与历史行为一致）
     """
     out = df
     total_masked = 0
-    matched_cols = set()
+    spec_by_col: dict[str, RuleSpec] = {}
     for spec in ruleset.specs:
         if spec.column not in out.columns:
             raise ValueError(f"规则引用了不存在的列: {spec.column!r}")
@@ -424,45 +628,34 @@ def apply_rules(
             raise ValueError(f"规则 {spec.rule!r} 未定义")
         if rule.default_disabled:
             raise ValueError(f"规则 {spec.rule!r} 默认关闭，请在 YAML 中显式启用")
+        spec_by_col[spec.column] = spec
 
-        matched_cols.add(spec.column)
-        col = pl.col(spec.column).cast(pl.Utf8)
-        # map_elements 返回 dict {masked_value, changed}，拆出值列 + 计数列
+    regexes = _build_value_scan_regexes(ruleset) if value_scan else []
+    cell_regexes = _build_cell_scan_regexes(ruleset) if value_scan else []
+    name_rule = ruleset.defs.get("name")
+    person_names = tuple(sorted(person_list, key=len, reverse=True)) if person_list else ()
+
+    for col_name in out.columns:
+        spec = spec_by_col.get(col_name)
+        if spec is None and not value_scan:
+            continue
+        mapped_rule = ruleset.defs.get(spec.rule) if spec is not None else None
+        mapped_strategy = spec.strategy if spec is not None else "mask"
+        col = pl.col(col_name).cast(pl.Utf8)
         result = col.map_elements(
-            lambda v, r=rule, s=spec: _apply_single_count(
-                r, v if v is not None else "", s.strategy, pepper
+            lambda v, mr=mapped_rule, ms=mapped_strategy: _mask_one_cell(
+                v if v is not None else "",
+                mr, ms, regexes, name_rule, pepper,
+                person_list, cell_regexes, person_names, value_scan,
             ),
             return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
-        ).alias("__masked_result")
-        # 展开
+        ).alias("__cell_result")
         out = out.with_columns(
-            result.struct.field("masked_value").alias(spec.column),
+            result.struct.field("masked_value").alias(col_name),
             result.struct.field("changed").alias("__changed"),
         )
         total_masked += int(out["__changed"].sum())
         out = out.drop("__changed")
-
-    # 值级检测：未匹配列的值跑敏感正则（补列名漏检）
-    if value_scan:
-        regexes = _build_value_scan_regexes(ruleset)
-        name_rule = ruleset.defs.get("name")
-        if regexes or name_rule:
-            for col_name in out.columns:
-                if col_name in matched_cols:
-                    continue  # 已匹配列不重复
-                col = pl.col(col_name).cast(pl.Utf8)
-                result = col.map_elements(
-                    lambda v, rx=regexes, nr=name_rule, p=pepper, plist=person_list: _value_scan_single(
-                        v if v is not None else "", rx, "mask", p, nr, plist
-                    ),
-                    return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
-                ).alias("__vs_result")
-                out = out.with_columns(
-                    result.struct.field("masked_value").alias(col_name),
-                    result.struct.field("changed").alias("__vs_changed"),
-                )
-                total_masked += int(out["__vs_changed"].sum())
-                out = out.drop("__vs_changed")
 
     return out, total_masked
 

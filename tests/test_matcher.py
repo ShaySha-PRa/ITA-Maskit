@@ -42,6 +42,15 @@ def test_id_card_matches():
     assert mapping["身份证号码"] == "id_card"
 
 
+def test_unit_column_not_company():
+    """列名「单位」不再自动当公司；「签约单位」仍映射。"""
+    specs = auto_match_columns(["单位", "签约单位", "往来单位"])
+    mapping = {s.column: s.rule for s in specs}
+    assert "单位" not in mapping
+    assert mapping["签约单位"] == "company"
+    assert mapping["往来单位"] == "company"
+
+
 def test_serializable_specs():
     """返回可序列化 dict。"""
     out = auto_match_specs_for(["姓名"])

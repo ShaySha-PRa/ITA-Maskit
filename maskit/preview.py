@@ -102,6 +102,7 @@ def _preview_excel(src, ruleset, pepper, person_list, sample_rows: int) -> list[
     except ImportError:
         raise ValueError("需要安装 openpyxl 才能预验证 Excel")
     import polars as pl
+    from maskit.io.excelio import cell_to_str, unique_headers
 
     wb = load_workbook(src, data_only=True)
     sheets = []
@@ -109,9 +110,11 @@ def _preview_excel(src, ruleset, pepper, person_list, sample_rows: int) -> list[
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             continue
-        header = [str(c) if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
+        header = unique_headers(
+            [str(c) if c is not None else f"col_{i}" for i, c in enumerate(rows[0])]
+        )
         data = rows[1:]
-        data = [["" if v is None else str(v) for v in row] for row in data]
+        data = [[cell_to_str(v) for v in row] for row in data]
         df = pl.DataFrame(data, schema=header, orient="row")
         info = _preview_df(df, ruleset, pepper, person_list, sample_rows)
         info["sheet"] = ws.title

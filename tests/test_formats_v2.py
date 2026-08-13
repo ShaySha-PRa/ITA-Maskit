@@ -85,6 +85,31 @@ def test_person_list_builtin_still_guards():
     assert "张伟达" in out  # 未被误伤
 
 
+def test_person_list_external_no_substring_cut():
+    """外部清单同样不切张伟达 / 机构名。"""
+    from maskit.text import mask_text_pii
+
+    rs = load_ruleset()
+    people = {"张伟", "东方不败"}
+    out = mask_text_pii(
+        "选手张伟达获奖，东方不败工作室来函。",
+        rs, None, "mask", scan_names=True, person_list=people,
+    )
+    assert "张伟达" in out
+    assert "东方不败工作室" in out
+
+
+def test_text_ip_skips_version_lookalike():
+    """正文 IP 扫描不把 v10.20.30.40 当 IP。"""
+    from maskit.text import mask_text_pii
+
+    rs = load_ruleset()
+    out = mask_text_pii("客户端 v10.20.30.40 发布，主机 10.1.2.3", rs, None, "mask")
+    assert "v10.20.30.40" in out
+    assert "10.1.2.3" not in out
+    assert "*.*.*.*" in out
+
+
 def test_person_list_missing_file(tmp_path):
     """人员清单不存在 → FileNotFoundError。"""
     from maskit.rules.name_company import load_person_list

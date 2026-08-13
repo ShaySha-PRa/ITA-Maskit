@@ -264,7 +264,7 @@ rules:
 
 - **PDF 默认是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。需要保版式证据时，用 **PDF 原样遮罩（beta）**（见下）。
 - **name/company 默认不扫文本**：匹配正则太宽，默认跳过防误伤；用 `--scan-names` 启用（语义前缀 + 词表 + 可选人员清单，纯本地）。表格值级姓名：推荐 `--person-list`；有清单时关闭姓氏启发式。
-- **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。
+- **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。身份证等 18 位数字请在 Excel 里设为**文本**格式；存成数字会丢精度（约 15 位），工具只能尽量避免科学计数，不能还原末几位。
 - **.msg 输入输出 .eml**：Outlook `.msg` 是私有 OLE 格式，Python 无库能可靠回写，因此脱敏后输出标准 `.eml`（可打开/转发/作证据）。`.msg→.eml` 的 MIME boundary 每次随机，输出**内容确定但非逐字节一致**。
 - **邮件只支持 .eml/.msg**：Outlook 其它私有格式不在范围。
 - **图片脱敏是 beta**：`--image-crop` 启用，OCR 定位敏感文字区域并**裁剪掉**（图片变小）。需手动安装 tesseract + 中文语言包（`pip install -e ".[image]"` + 系统 tesseract）。

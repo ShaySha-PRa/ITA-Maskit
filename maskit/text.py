@@ -12,7 +12,11 @@ from __future__ import annotations
 import re
 
 from maskit.rules.defs import RuleDef, RuleSet
-from maskit.rules.engine import _apply_single
+from maskit.rules.engine import (
+    CELL_IP_RE,
+    _apply_single,
+    iter_pii_variant_hits,
+)
 
 
 def _strip_anchors(pattern: str) -> str:
@@ -30,6 +34,24 @@ def _scanable_rules(ruleset: RuleSet) -> list[RuleDef]:
         for d in ruleset.defs.values()
         if d.text_scanable and not d.default_disabled
     ]
+
+
+def _is_ip_shaped(value: str) -> bool:
+    """v10.20.30.40 / 10.20.30.40（可带尾空白）视为 IP 形态，避免 phone/app_version 抢匹配。"""
+    body = value.strip()
+    if body[:1] in "vV":
+        body = body[1:]
+    parts = body.split(".")
+    if len(parts) != 4:
+        return False
+    return all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
+
+
+def _text_scan_regex(rule: RuleDef) -> re.Pattern:
+    """文本流正则：IP 用带边界的格内正则，避免 v10.20.30.40。"""
+    if rule.name == "ip":
+        return CELL_IP_RE
+    return re.compile(_strip_anchors(rule.match))
 
 
 def mask_text_pii(
@@ -51,11 +73,44 @@ def mask_text_pii(
     if not text:
         return text
     out = text
-    for original, replacement in iter_text_pii_hits(
-        text, ruleset, pepper, strategy, scan_names, person_list
+    for original, replacement in _iter_regex_and_variant_hits(
+        text, ruleset, pepper, strategy
     ):
         out = out.replace(original, replacement)
+    if scan_names:
+        out = _mask_names(out, ruleset, pepper, strategy, person_list)
     return out
+
+
+def _iter_regex_and_variant_hits(
+    text: str,
+    ruleset: RuleSet,
+    pepper: str | None,
+    strategy: str,
+) -> list[tuple[str, str]]:
+    hits: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for rule in _scanable_rules(ruleset):
+        regex = _text_scan_regex(rule)
+        for m in regex.finditer(text):
+            original = m.group(0)
+            if rule.name in {"phone", "app_version"} and _is_ip_shaped(original):
+                continue
+            if original in seen:
+                continue
+            seen.add(original)
+            hits.append((original, _apply_single(rule, original, strategy, pepper)))
+    by_name = {
+        d.name: d
+        for d in ruleset.defs.values()
+        if not d.default_disabled
+    }
+    for original, replacement in iter_pii_variant_hits(text, by_name, strategy, pepper):
+        if original not in seen:
+            seen.add(original)
+            hits.append((original, replacement))
+    hits.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return hits
 
 
 def iter_text_pii_hits(
@@ -73,25 +128,21 @@ def iter_text_pii_hits(
     if not text:
         return []
 
-    hits: list[tuple[str, str]] = []
-    seen: set[str] = set()
-
-    for rule in _scanable_rules(ruleset):
-        regex = re.compile(_strip_anchors(rule.match))
-        for m in regex.finditer(text):
-            original = m.group(0)
-            if original in seen:
-                continue
-            seen.add(original)
-            hits.append((original, _apply_single(rule, original, strategy, pepper)))
+    hits = _iter_regex_and_variant_hits(text, ruleset, pepper, strategy)
+    seen = {original for original, _ in hits}
 
     if scan_names:
-        from maskit.rules.name_company import find_company_names, find_person_names
+        from maskit.rules.name_company import (
+            BUILTIN_NAMES,
+            find_company_names,
+            iter_person_list_spans,
+        )
 
         name_rule = ruleset.defs.get("name")
         company_rule = ruleset.defs.get("company")
         if name_rule:
-            for name in find_person_names(text, person_list):
+            names = set(BUILTIN_NAMES) | (person_list or set())
+            for _, _, name in iter_person_list_spans(text, names):
                 if name not in seen:
                     seen.add(name)
                     hits.append((name, _apply_single(name_rule, name, strategy, pepper)))
@@ -101,7 +152,6 @@ def iter_text_pii_hits(
                     seen.add(comp)
                     hits.append((comp, _apply_single(company_rule, comp, strategy, pepper)))
 
-    # 长串优先，避免短匹配抢占 search_for
     hits.sort(key=lambda pair: len(pair[0]), reverse=True)
     return hits
 
@@ -114,7 +164,12 @@ def _mask_names(
     person_list: set[str] | None = None,
 ) -> str:
     """用语义前缀 + 词表识别 name/company 并替换（纯本地零网络）。"""
-    from maskit.rules.name_company import find_company_names, find_person_names
+    from maskit.rules.name_company import (
+        BUILTIN_NAMES,
+        find_company_names,
+        find_person_names,
+        mask_person_list_in_text,
+    )
 
     name_rule = ruleset.defs.get("name")
     company_rule = ruleset.defs.get("company")
@@ -122,16 +177,22 @@ def _mask_names(
         return text
 
     out = text
-    # 识别到的人名 → 替换
-    for name in find_person_names(out, person_list):
-        if name_rule:
-            out = out.replace(
-                name,
-                _apply_single(name_rule, name, strategy, pepper),
-            )
-    # 公司名 → 替换
-    for comp in find_company_names(out):
-        if company_rule:
+    if name_rule:
+        names = set(BUILTIN_NAMES) | (person_list or set())
+        out = mask_person_list_in_text(
+            out,
+            names,
+            lambda n, nr=name_rule: _apply_single(nr, n, strategy, pepper),
+        )
+        # 语义前缀命中、但不在词表里的名字（按捕获组位置替换，避免全局子串误伤）
+        listed = set(names)
+        prefix_names = [
+            n for n in find_person_names(out, person_list) if n not in listed
+        ]
+        for name in sorted(prefix_names, key=len, reverse=True):
+            out = out.replace(name, _apply_single(name_rule, name, strategy, pepper))
+    if company_rule:
+        for comp in find_company_names(out):
             out = out.replace(
                 comp,
                 _apply_single(company_rule, comp, strategy, pepper),

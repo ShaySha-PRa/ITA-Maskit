@@ -350,7 +350,7 @@ def _version_callback(value: bool) -> None:
                 import maskit._native as n
 
                 engine = f"native {n.native_version()}"
-        except Exception:
+        except (ImportError, OSError, AttributeError, RuntimeError):
             engine = "python"
         typer.echo(f"ITA-maskit {__version__} [{engine}]")
         raise typer.Exit()

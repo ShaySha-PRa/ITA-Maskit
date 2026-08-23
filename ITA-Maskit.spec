@@ -7,11 +7,20 @@ git 下载者不需要自己写打包参数：
     pyinstaller ITA-Maskit.spec
 产出 dist/ITA-Maskit.exe。
 """
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = []
 binaries = []
 hiddenimports = []
+
+# Optional native extension: collect the .pyd/.so if this checkout built it.
+# Missing _native is fine; maskit.native falls back to the Python backend.
+hiddenimports += ["maskit._native", "maskit.native", "maskit.native.adapter"]
+for pattern in ("_native*.pyd", "_native*.so"):
+    for pyd in Path("maskit").glob(pattern):
+        binaries.append((str(pyd.resolve()), "maskit"))
 
 # polars（Rust 二进制 + 数据）全量收集，避免运行时报缺文件
 polars_datas, polars_binaries, polars_hidden = collect_all("polars")

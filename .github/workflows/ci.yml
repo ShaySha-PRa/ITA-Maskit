@@ -48,6 +48,22 @@ jobs:
       - name: Kernel smoke
         run: python scripts/bench_native_kernel.py
 
+  native-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: lukka/get-cmake@latest
+      - name: Install Python deps
+        run: pip install -e ".[dev]" pybind11
+      - name: Build native core
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_native.ps1
+      - name: Native parity smoke
+        run: powershell -ExecutionPolicy Bypass -File scripts/test_native.ps1
+
   # 每个 push 自动构建 Windows exe，供用户直接下载（无需自己打包）
   build-exe:
     runs-on: windows-latest
@@ -57,10 +73,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: lukka/get-cmake@latest
       - name: Install dependencies
         run: |
           pip install -e ".[gui,image,llm,pdf]"
-          pip install pyinstaller
+          pip install pyinstaller pybind11
+      - name: Build native (best effort)
+        continue-on-error: true
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_native.ps1
       - name: Build exe
         run: python -m PyInstaller ITA-Maskit.spec --clean --noconfirm
       - name: Upload exe artifact

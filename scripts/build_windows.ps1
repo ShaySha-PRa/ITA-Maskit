@@ -34,6 +34,14 @@ Write-Host "=== Install PyInstaller ==="
 Invoke-Py -m pip install pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller install failed" }
 
+Write-Host "=== Optional native core (HMAC + person-list) ==="
+try {
+    Invoke-Py -m pip install pybind11
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "build_native.ps1") -Optional
+} catch {
+    Write-Host "Native build skipped (pure Python EXE will still work)"
+}
+
 Write-Host "=== Build (ITA-Maskit.spec) ==="
 Invoke-Py -m PyInstaller ITA-Maskit.spec --clean --noconfirm
 if ($LASTEXITCODE -ne 0) { throw "build failed" }

@@ -36,6 +36,7 @@ docs/
 
 # Native C++ build artifacts (source under native/ is tracked)
 native/build/
+native/build-win/
 maskit/_native*.so
 maskit/_native*.pyd
 maskit/_native*.dll

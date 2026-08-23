@@ -58,6 +58,10 @@ def test_batch_and_digits_parity():
     assert py.hash_batch(values, PEPPER, "v2", entities, 24) == nt.hash_batch(
         values, PEPPER, "v2", entities, 24
     )
+    names = ["张伟", "Alice Chen", "李娜"]
+    assert py.hash_batch(names, PEPPER, "v2", ["name"], 64, "1") == nt.hash_batch(
+        names, PEPPER, "v2", ["name"], 64, "1"
+    )
     hx = py.hash_v1("13800138000", PEPPER, 16)
     assert py.digits_from_hex(hx, 11) == nt.digits_from_hex(hx, 11)
 

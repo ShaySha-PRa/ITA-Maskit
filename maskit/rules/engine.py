@@ -95,7 +95,7 @@ def pseudo_hash_v2(
 ) -> str:
     """96-bit hex default. Domain-separated by entity type + normalizer version."""
     key = pseudo_key_v2(pepper, entity_type)
-    msg = f"v2|{normalizer_version}|{value}".encode("utf-8")
+    msg = f"v2|{normalizer_version}|{value}".encode()
     return hmac.new(key, msg, hashlib.sha256).hexdigest()[:length].upper()
 
 

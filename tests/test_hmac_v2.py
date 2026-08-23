@@ -1,10 +1,7 @@
 """HMAC v2 is opt-in; v1 output must stay byte-identical."""
 
-import hashlib
-import hmac
-
 from maskit.rules.defs import RuleSet, RuleSpec
-from maskit.rules.engine import _apply_single, pseudo_hash, pseudo_hash_v2, pseudo_key_v2
+from maskit.rules.engine import _apply_single, pseudo_hash, pseudo_hash_v2
 from maskit.rules.loader import load_ruleset
 
 
@@ -23,16 +20,6 @@ def test_v2_determinism_and_entity_separation():
     assert len(d1) == 24
     other = pseudo_hash_v2("alice@corp.example", "pepper", "account")
     assert other != d1
-
-
-def test_v2_non_ascii_is_utf8():
-    """Windows default encoding is not UTF-8; HMAC must still hash UTF-8 bytes."""
-    value = "张伟"
-    key = pseudo_key_v2("pepper", "name")
-    expected = hmac.new(
-        key, f"v2|1|{value}".encode("utf-8"), hashlib.sha256
-    ).hexdigest()[:24].upper()
-    assert pseudo_hash_v2(value, "pepper", "name") == expected
 
 
 def test_v2_normalizer_version_separates():

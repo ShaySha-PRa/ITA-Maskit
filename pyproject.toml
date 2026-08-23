@@ -45,7 +45,10 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.4",
 ]
-# Optional C++ extension (CMake + compiler + OpenSSL/BCrypt). Pure Python still works.
+# Native Core（可选）：pip 只装 pybind11，还需 CMake + 编译器后跑 build 脚本。
+#   bash scripts/install.sh native
+#   powershell -File scripts/install.ps1 -Variant native
+# 不装此项则是完整可用的 Python 版。
 native = [
     "pybind11>=2.13",
 ]

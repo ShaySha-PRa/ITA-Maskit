@@ -1,7 +1,7 @@
 # Build the native extension with MSVC + CMake.
 #   powershell -ExecutionPolicy Bypass -File scripts/build_native.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts/build_native.ps1 -Optional
-# -Optional: missing CMake/MSVC prints a skip and exits 0 (used by build_windows.ps1).
+# -Optional: missing CMake/MSVC prints a skip and exits 0.
 # NOTE: keep this file ASCII-only for Windows PowerShell 5.1.
 
 param(

@@ -147,6 +147,7 @@ def test_cli_version():
     r = _run_cli("--version")
     assert r.returncode == 0
     assert "ITA-maskit" in r.stdout
+    assert "[python]" in r.stdout or "[native " in r.stdout
 
 
 def test_cli_demo(tmp_path):

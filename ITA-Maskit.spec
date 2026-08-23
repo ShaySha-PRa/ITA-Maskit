@@ -2,11 +2,13 @@
 """ITA-Maskit PyInstaller spec（--onefile --windowed）。
 
 git 下载者不需要自己写打包参数：
-    powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+    powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant python
+    powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant native
 或（已装依赖时）：
     pyinstaller ITA-Maskit.spec
-产出 dist/ITA-Maskit.exe。
+产出 dist/ITA-Maskit.exe（或 MASKIT_EXE_NAME 指定的名字）。
 """
+import os
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
@@ -15,12 +17,21 @@ datas = []
 binaries = []
 hiddenimports = []
 
-# Optional native extension: collect the .pyd/.so if this checkout built it.
-# Missing _native is fine; maskit.native falls back to the Python backend.
-hiddenimports += ["maskit._native", "maskit.native", "maskit.native.adapter"]
-for pattern in ("_native*.pyd", "_native*.so"):
-    for pyd in Path("maskit").rglob(pattern):
-        binaries.append((str(pyd.resolve()), "maskit"))
+# Only the Native exe should ship maskit._native. A leftover .pyd in the
+# tree must not leak into the Python-variant build.
+_exe_name = os.environ.get("MASKIT_EXE_NAME", "ITA-Maskit")
+_bundle_native = os.environ.get("MASKIT_BUNDLE_NATIVE", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+} or _exe_name == "ITA-Maskit-native"
+hiddenimports += ["maskit.native", "maskit.native.adapter"]
+if _bundle_native:
+    hiddenimports += ["maskit._native"]
+    for pattern in ("_native*.pyd", "_native*.so"):
+        for pyd in Path("maskit").rglob(pattern):
+            binaries.append((str(pyd.resolve()), "maskit"))
 
 # polars（Rust 二进制 + 数据）全量收集，避免运行时报缺文件
 polars_datas, polars_binaries, polars_hidden = collect_all("polars")
@@ -79,6 +90,7 @@ a = Analysis(
     excludes=[
         "torch", "nvidia", "triton", "cuda", "transformers",
         "bitsandbytes", "tensorflow", "keras",
+        *(["maskit._native"] if not _bundle_native else []),
     ],
     noarchive=False,
     optimize=0,
@@ -91,7 +103,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="ITA-Maskit",
+    name=_exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

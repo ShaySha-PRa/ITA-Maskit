@@ -342,7 +342,17 @@ def audit(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo(f"ITA-maskit {__version__}")
+        engine = "python"
+        try:
+            from maskit.native import native_available
+
+            if native_available():
+                import maskit._native as n
+
+                engine = f"native {n.native_version()}"
+        except Exception:
+            engine = "python"
+        typer.echo(f"ITA-maskit {__version__} [{engine}]")
         raise typer.Exit()
 
 

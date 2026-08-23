@@ -107,3 +107,41 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.exe_name }}.exe
           if-no-files-found: error
+
+  # Python exe is the auditor download. Native matrix may fail; still publish
+  # the successful Python artifact to a stable Release URL.
+  publish-windows-exe:
+    if: >
+      always() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      !cancelled() && needs.build-exe.result != 'skipped'
+    needs: build-exe
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Python exe
+        uses: actions/download-artifact@v4
+        with:
+          name: ITA-Maskit-exe
+          path: dist
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -f dist/ITA-Maskit.exe
+          notes='审计人员下载 ITA-Maskit.exe 后双击即可运行，无需安装 Python。
+
+          若出现 Windows SmartScreen：更多信息 → 仍要运行。
+
+          一键安装（开始菜单 + 桌面快捷方式）：
+          powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ShaySha-PRa/ITA-Maskit/main/scripts/install_windows.ps1 | iex"
+
+          Native 版仍在 Actions Artifacts（ITA-Maskit-native-exe）。'
+          if ! gh release view windows --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create windows --repo "$GITHUB_REPOSITORY" \
+              --title "Windows 版（直接下载）" \
+              --notes "$notes"
+          fi
+          gh release upload windows dist/ITA-Maskit.exe --repo "$GITHUB_REPOSITORY" --clobber
+

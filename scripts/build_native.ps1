@@ -117,11 +117,18 @@ if (Test-Path $ctest) {
 }
 if ($LASTEXITCODE -ne 0) { Write-Skip "ctest failed" }
 
-$pyd = Get-ChildItem -Path "maskit" -Filter "_native*.pyd" -ErrorAction SilentlyContinue | Select-Object -First 1
+$pyd = Get-ChildItem -Path "maskit" -Filter "_native*.pyd" -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "_native*.pyd" } |
+    Select-Object -First 1
 if (-not $pyd) {
     Write-Skip "maskit/_native*.pyd was not produced"
 }
-Write-Host "pyd: $($pyd.FullName)"
+$dest = Join-Path (Join-Path $PWD "maskit") $pyd.Name
+if ($pyd.FullName -ne $dest) {
+    Copy-Item $pyd.FullName $dest -Force
+    Write-Host "copied pyd to $dest"
+}
+Write-Host "pyd: $dest"
 
 Write-Host "=== import smoke ==="
 Invoke-Py -c "import maskit._native as n; print('import ok', n.native_version(), n.build_compiler(), n.build_type())"

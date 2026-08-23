@@ -57,8 +57,15 @@ if(MASKIT_BUILD_PYTHON)
         set_target_properties(_native PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY_${cfg} "${CMAKE_CURRENT_SOURCE_DIR}/../maskit"
             RUNTIME_OUTPUT_DIRECTORY_${cfg} "${CMAKE_CURRENT_SOURCE_DIR}/../maskit"
+            ARCHIVE_OUTPUT_DIRECTORY_${cfg} "${CMAKE_CURRENT_SOURCE_DIR}/../maskit"
         )
     endforeach()
+    # MSVC multi-config still appends Release/; copy next to maskit/__init__.py.
+    add_custom_command(TARGET _native POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:_native>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../maskit/$<TARGET_FILE_NAME:_native>"
+    )
 endif()
 
 if(MASKIT_BUILD_TESTS)

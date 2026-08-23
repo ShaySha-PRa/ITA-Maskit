@@ -19,7 +19,7 @@ hiddenimports = []
 # Missing _native is fine; maskit.native falls back to the Python backend.
 hiddenimports += ["maskit._native", "maskit.native", "maskit.native.adapter"]
 for pattern in ("_native*.pyd", "_native*.so"):
-    for pyd in Path("maskit").glob(pattern):
+    for pyd in Path("maskit").rglob(pattern):
         binaries.append((str(pyd.resolve()), "maskit"))
 
 # polars（Rust 二进制 + 数据）全量收集，避免运行时报缺文件

@@ -150,7 +150,7 @@ def test_excel_end_to_end(tmp_path):
     ).write_excel(src)
     rows = mask_file(src, out, load_ruleset(), None)
     assert rows == 2
-    masked = pl.read_excel(out)
+    masked = pl.read_excel(out, engine="openpyxl")
     assert masked["name"].to_list() == ["张*", "李*"]
     assert masked["ip"].to_list() == ["*.*.*.*", "*.*.*.*"]
 

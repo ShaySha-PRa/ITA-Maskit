@@ -1,6 +1,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <tuple>
+
+#include "maskit/core/dictionary.hpp"
 #include "maskit/core/errors.hpp"
 #include "maskit/core/pseudonym.hpp"
 #include "maskit/core/version.hpp"
@@ -28,7 +31,52 @@ void register_exceptions(const py::module_& m) {
 }  // namespace
 
 PYBIND11_MODULE(_native, m) {
-    m.doc() = "ITA-Maskit native core (HMAC batch + version metadata)";
+    m.doc() = "ITA-Maskit native core (HMAC batch + person-list matcher)";
+
+    py::class_<maskit::core::CompiledDictionary, std::shared_ptr<maskit::core::CompiledDictionary>>(
+        m, "CompiledDictionary"
+    )
+        .def("size", &maskit::core::CompiledDictionary::size)
+        .def(
+            "match",
+            [](const maskit::core::CompiledDictionary& self, const std::string& text) {
+                py::gil_scoped_release release;
+                auto spans = self.match(text);
+                std::vector<std::tuple<std::uint32_t, std::uint32_t, std::string>> out;
+                out.reserve(spans.size());
+                for (auto& s : spans) {
+                    out.emplace_back(s.char_start, s.char_end, std::move(s.name));
+                }
+                return out;
+            },
+            py::arg("text")
+        )
+        .def(
+            "match_batch",
+            [](const maskit::core::CompiledDictionary& self,
+               const std::vector<std::string>& texts) {
+                py::gil_scoped_release release;
+                auto batches = self.match_batch(texts);
+                std::vector<std::vector<std::tuple<std::uint32_t, std::uint32_t, std::string>>> out;
+                out.reserve(batches.size());
+                for (auto& spans : batches) {
+                    std::vector<std::tuple<std::uint32_t, std::uint32_t, std::string>> row;
+                    row.reserve(spans.size());
+                    for (auto& s : spans) {
+                        row.emplace_back(s.char_start, s.char_end, std::move(s.name));
+                    }
+                    out.push_back(std::move(row));
+                }
+                return out;
+            },
+            py::arg("texts")
+        );
+
+    m.def(
+        "compile_person_list",
+        &maskit::core::CompiledDictionary::compile,
+        py::arg("names")
+    );
     register_exceptions(m);
 
     m.def("native_version", &maskit::core::native_version);

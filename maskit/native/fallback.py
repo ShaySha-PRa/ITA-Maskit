@@ -58,5 +58,15 @@ class PythonReferenceBackend:
     def digits_from_hex(self, hex_str: str, n: int) -> str:
         return _digits_from_hex(hex_str, n)
 
+    def match_person_list(self, text: str, names) -> list[tuple[int, int, str]]:
+        from maskit.rules.name_company import iter_person_list_spans_ref
+
+        return iter_person_list_spans_ref(text, set(names) if names else set())
+
+    def match_person_list_batch(
+        self, texts: list[str], names
+    ) -> list[list[tuple[int, int, str]]]:
+        return [self.match_person_list(t, names) for t in texts]
+
     def metadata(self) -> dict:
         return {"backend": self.name, "native_version": None}

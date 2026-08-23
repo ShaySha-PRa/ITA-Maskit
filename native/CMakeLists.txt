@@ -11,6 +11,7 @@ option(MASKIT_BUILD_TESTS "Build C++ unit tests" ON)
 add_library(maskit_core STATIC
     src/crypto.cpp
     src/pseudonym.cpp
+    src/dictionary.cpp
     src/version.cpp
 )
 target_include_directories(maskit_core PUBLIC
@@ -71,4 +72,8 @@ if(MASKIT_BUILD_TESTS)
     add_executable(maskit_core_smoke tools/test.cpp)
     target_link_libraries(maskit_core_smoke PRIVATE maskit_core)
     add_test(NAME maskit_core_smoke COMMAND maskit_core_smoke)
+
+    add_executable(maskit_dict_tests tests/test_dictionary.cpp)
+    target_link_libraries(maskit_dict_tests PRIVATE maskit_core)
+    add_test(NAME maskit_dict_tests COMMAND maskit_dict_tests)
 endif()

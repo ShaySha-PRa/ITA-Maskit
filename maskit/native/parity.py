@@ -61,6 +61,22 @@ class CompareBackend:
             raise AssertionError("native/python digits_from_hex mismatch")
         return py
 
+    def match_person_list(self, text: str, names) -> list[tuple[int, int, str]]:
+        py = self.python.match_person_list(text, names)
+        nt = self.native.match_person_list(text, names)
+        if py != nt:
+            raise AssertionError("native/python match_person_list mismatch")
+        return py
+
+    def match_person_list_batch(
+        self, texts: list[str], names
+    ) -> list[list[tuple[int, int, str]]]:
+        py = self.python.match_person_list_batch(texts, names)
+        nt = self.native.match_person_list_batch(texts, names)
+        if py != nt:
+            raise AssertionError("native/python match_person_list_batch mismatch")
+        return py
+
     def metadata(self) -> dict:
         meta = self.native.metadata()
         meta["backend"] = self.name

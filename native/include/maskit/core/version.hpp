@@ -4,7 +4,7 @@
 
 namespace maskit::core {
 
-inline constexpr const char* kNativeVersion = "0.1.0";
+inline constexpr const char* kNativeVersion = "0.1.1";
 inline constexpr int kCoreAbiVersion = 1;
 inline constexpr const char* kDetectorVersion = "python-reference";
 inline constexpr const char* kNormalizerVersion = "1";

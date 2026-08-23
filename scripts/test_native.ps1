@@ -4,11 +4,25 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    function Invoke-Py { & py -3 @args }
-} else {
-    function Invoke-Py { & python @args }
+function Resolve-PythonExe {
+    if ($env:pythonLocation) {
+        $candidate = Join-Path $env:pythonLocation "python.exe"
+        if (Test-Path $candidate) { return $candidate }
+    }
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        $out = & py -3 -c "import sys; print(sys.executable)"
+        if ($LASTEXITCODE -eq 0 -and $out) {
+            return ([string]$out).Trim()
+        }
+    }
+    throw "Python executable not found (set pythonLocation or put python on PATH)"
 }
+
+$PyExe = Resolve-PythonExe
+function Invoke-Py { & $script:PyExe @args }
+Write-Host "Python: $PyExe"
 
 Write-Host "=== import maskit._native ==="
 Invoke-Py -c "import maskit._native as n; print(n.native_version(), n.build_compiler(), n.build_type())"

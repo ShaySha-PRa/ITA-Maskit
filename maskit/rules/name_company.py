@@ -176,9 +176,7 @@ def _is_longer_name_trap(name: str, rest: str, name_set: set[str]) -> bool:
     combined = name + rest[:i]
     if combined in name_set:
         return False
-    if not re.fullmatch(r"[一-鿿]{2,8}", combined):
-        return False
-    return True
+    return bool(re.fullmatch(r"[一-鿿]{2,8}", combined))
 
 
 def iter_person_list_spans_ref(text: str, names: set[str]) -> list[tuple[int, int, str]]:

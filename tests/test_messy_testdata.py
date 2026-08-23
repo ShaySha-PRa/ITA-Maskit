@@ -9,7 +9,6 @@ from openpyxl import load_workbook
 
 from maskit.io import mask_file
 from maskit.rules.loader import load_ruleset
-from maskit.rules.name_company import load_person_list
 
 _GEN = Path(__file__).resolve().parents[1] / "scripts" / "gen_messy_testdata.py"
 _spec = importlib.util.spec_from_file_location("gen_messy_testdata", _GEN)

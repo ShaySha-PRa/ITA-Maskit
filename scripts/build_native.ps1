@@ -17,11 +17,26 @@ function Write-Skip([string]$Message) {
     throw $Message
 }
 
-if (Get-Command py -ErrorAction SilentlyContinue) {
-    function Invoke-Py { & py -3 @args }
-} else {
-    function Invoke-Py { & python @args }
+# Prefer setup-python's interpreter (pythonLocation). `py -3` on
+# windows-latest may resolve to a newer unused runtime without pybind11.
+function Resolve-PythonExe {
+    if ($env:pythonLocation) {
+        $candidate = Join-Path $env:pythonLocation "python.exe"
+        if (Test-Path $candidate) { return $candidate }
+    }
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        $out = & py -3 -c "import sys; print(sys.executable)"
+        if ($LASTEXITCODE -eq 0 -and $out) {
+            return ([string]$out).Trim()
+        }
+    }
+    throw "Python executable not found (set pythonLocation or put python on PATH)"
 }
+
+$PyExe = Resolve-PythonExe
+function Invoke-Py { & $script:PyExe @args }
 
 function Find-CMake {
     if (Get-Command cmake -ErrorAction SilentlyContinue) {
@@ -49,12 +64,15 @@ function Import-VsDevCmd {
 }
 
 Write-Host "=== Python ==="
-$py = (Invoke-Py -c "import sys; print(sys.executable)").Trim()
-Write-Host "Python: $py"
+Write-Host "Python: $PyExe"
+Invoke-Py -c "import sys; print(sys.version)"
 
 Write-Host "=== pybind11 ==="
 Invoke-Py -m pip install -q pybind11
 if ($LASTEXITCODE -ne 0) { Write-Skip "pip install pybind11 failed" }
+$pybind11Dir = ((Invoke-Py -c "import pybind11; print(pybind11.get_cmake_dir())") | Select-Object -Last 1).ToString().Trim()
+if (-not $pybind11Dir) { Write-Skip "pybind11.get_cmake_dir() returned empty" }
+Write-Host "pybind11_DIR: $pybind11Dir"
 
 $cmake = Find-CMake
 if (-not $cmake) {
@@ -79,7 +97,10 @@ $build = Join-Path $PWD "native\build-win"
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 
 Write-Host "=== CMake configure ==="
-& $cmake -S native -B $build -DPython_EXECUTABLE=$py -DCMAKE_BUILD_TYPE=Release
+& $cmake -S native -B $build `
+    "-DPython_EXECUTABLE=$PyExe" `
+    "-Dpybind11_DIR=$pybind11Dir" `
+    -DCMAKE_BUILD_TYPE=Release
 if ($LASTEXITCODE -ne 0) { Write-Skip "cmake configure failed" }
 
 Write-Host "=== CMake build ==="

@@ -375,8 +375,9 @@ def test_pdf_redact_missing_pymupdf(tmp_path, monkeypatch):
     import builtins
     import sys
 
-    import maskit.io.pdfio as pdfio
     from reportlab.pdfgen import canvas
+
+    from maskit.io import pdfio
 
     src = tmp_path / "in.pdf"
     out = tmp_path / "out.pdf"

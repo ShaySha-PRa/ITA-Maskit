@@ -32,9 +32,7 @@ endif()
 
 if(MASKIT_BUILD_PYTHON)
     set(PYBIND11_FINDPYTHON ON)
-    if(NOT Python_EXECUTABLE)
-        find_package(Python REQUIRED COMPONENTS Interpreter Development)
-    endif()
+    find_package(Python REQUIRED COMPONENTS Interpreter Development)
     execute_process(
         COMMAND "${Python_EXECUTABLE}" -c "import pybind11; print(pybind11.get_cmake_dir())"
         OUTPUT_VARIABLE _pybind11_dir

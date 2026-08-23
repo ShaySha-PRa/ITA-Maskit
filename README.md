@@ -4,6 +4,18 @@
 
 > 审计要求每年都在变 —— ITA-maskit 把「脱敏规则」做成数据：新增字段类型 / 调整遮盖策略，编辑一段 YAML 即可，无需发版。规则带版本号，审计可追溯「哪版规则产出哪个结果」。
 
+## 下载 Windows 版（审计人员，无需 Python）
+
+1. [下载 ITA-Maskit.exe](https://github.com/ShaySha-PRa/ITA-Maskit/releases/download/windows/ITA-Maskit.exe)
+2. 双击运行。若弹出 SmartScreen：点「更多信息」→「仍要运行」。
+3. 需要开始菜单 / 桌面图标时，在 PowerShell 执行（会下载到 `%LOCALAPPDATA%\ITA-Maskit` 并创建快捷方式）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ShaySha-PRa/ITA-Maskit/main/scripts/install_windows.ps1 | iex"
+```
+
+exe 是单文件，不写注册表；数据仍只在本机。开发者源码安装见下面「两个安装版本」。
+
 ## 核心能力
 
 | 能力 | 说明 |
@@ -30,7 +42,7 @@
 | 适合 | 先跑通、办公机、无编译器 | 大批量 HMAC / 人员清单 / 校验 |
 | 依赖 | Python 3.10+ | 另需 CMake + C++ 编译器（Linux: g++、libssl；Windows: MSVC） |
 | 安装 | `pip install -e .` 或 `scripts/install.sh python` | `scripts/install.sh native` / `install.ps1 -Variant native` |
-| Windows exe | Artifacts **`ITA-Maskit-exe`** → `ITA-Maskit.exe` | Artifacts **`ITA-Maskit-native-exe`** → `ITA-Maskit-native.exe` |
+| Windows exe | [Releases `ITA-Maskit.exe`](https://github.com/ShaySha-PRa/ITA-Maskit/releases/download/windows/ITA-Maskit.exe) | Actions **`ITA-Maskit-native-exe`** |
 | 加速（本机测） | Polars | HMAC ~3×、人员清单 Trie ~26×、身份证校验 ~15×；整表 10k 行伪名化约 1.3× |
 | 检测 | YAML 正则 + checksum + 词典 | 同上；强制 native 时 phone / 工号 / 版本走 C++，gold/holdout 仍为 0 FP / 0 FN |
 
@@ -149,15 +161,14 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant pyth
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant native
 ```
 
-### 方式三：直接下载 exe（无需自己打包）
+### 方式三：直接下载 / 安装 exe（无需自己打包）
 
-仓库 GitHub Actions 在每次 push 到 main 时分别构建两个 exe：
-GitHub → Actions → 最新一次运行 → **Artifacts**，按需下载其一：
+每次 push 到 `main` 且 Python 版 exe 构建成功后，会更新 GitHub Release：
 
-| Artifact | 文件 | 版本 |
-|--|--|--|
-| `ITA-Maskit-exe` | `ITA-Maskit.exe` | Python 版（默认，无需本机编译器） |
-| `ITA-Maskit-native-exe` | `ITA-Maskit-native.exe` | Native 版（HMAC / Trie 等走 C++） |
+| 给谁 | 怎么拿 |
+|--|--|
+| 审计人员（推荐） | [下载 ITA-Maskit.exe](https://github.com/ShaySha-PRa/ITA-Maskit/releases/download/windows/ITA-Maskit.exe) 双击运行；或跑上面的 `install_windows.ps1` 装到开始菜单 |
+| 要 Native 加速 | GitHub → Actions → 最新一次运行 → Artifacts **`ITA-Maskit-native-exe`**（需登录，会过期） |
 
 > **exe 注意**：
 > - 图片脱敏（beta）需安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) 二进制；**中文/英文语言包首次使用时自动下载**（约 28MB，无需手动装）

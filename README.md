@@ -184,6 +184,24 @@ GitHub → Actions → 最新一次运行 → **Artifacts**，按需下载其一
 
 ## 操作界面演示
 
+### 命令行
+
+`demo` 造数据 → `mask` 脱敏 → `audit` 查日志。业务文件和 pepper 都只在本机。
+
+![命令行演示](assets/demo/cli.gif)
+
+```bash
+maskit demo --rows 100000
+maskit mask demo_data.csv --rules demo-rules.yaml --pepper <密钥> -o out.csv
+maskit audit
+```
+
+### Windows GUI
+
+拖拽/选择文件 → 预验证看命中 → 开始脱敏。下面动图走完整三步，静帧可对照细节。
+
+![GUI 演示](assets/demo/gui.gif)
+
 **主界面**：拖拽/选择文件 → 点「预验证」看命中 → 选证件校验 → 点「开始脱敏」→ 需要时打开「复核清单」→ 结果表一键打开输出文件。
 
 ![主界面](assets/screenshots/main.png)

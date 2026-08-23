@@ -28,7 +28,10 @@ set_target_properties(maskit_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
     target_compile_options(maskit_core PRIVATE /W4 /WX /utf-8)
     target_link_libraries(maskit_core PRIVATE bcrypt)
-    target_compile_definitions(maskit_core PRIVATE MASKIT_USE_BCRYPT=1)
+    target_compile_definitions(maskit_core PRIVATE
+        MASKIT_USE_BCRYPT=1
+        _CRT_SECURE_NO_WARNINGS
+    )
 else()
     target_compile_options(maskit_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
     find_package(OpenSSL REQUIRED)

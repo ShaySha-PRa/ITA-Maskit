@@ -176,13 +176,11 @@ def _is_longer_name_trap(name: str, rest: str, name_set: set[str]) -> bool:
     combined = name + rest[:i]
     if combined in name_set:
         return False
-    if not re.fullmatch(r"[一-鿿]{2,8}", combined):
-        return False
-    return True
+    return bool(re.fullmatch(r"[一-鿿]{2,8}", combined))
 
 
-def iter_person_list_spans(text: str, names: set[str]) -> list[tuple[int, int, str]]:
-    """在文本中找应替换的清单人名跨度（最长优先，跳过机构名/更长姓名）。"""
+def iter_person_list_spans_ref(text: str, names: set[str]) -> list[tuple[int, int, str]]:
+    """Python reference: 最长优先，跳过机构名/更长姓名。"""
     name_set = {n for n in names if n}
     if not text or not name_set:
         return []
@@ -209,6 +207,13 @@ def iter_person_list_spans(text: str, names: set[str]) -> list[tuple[int, int, s
         else:
             i += 1
     return spans
+
+
+def iter_person_list_spans(text: str, names: set[str]) -> list[tuple[int, int, str]]:
+    """清单人名跨度。Native 可用时走 Trie；否则 Python reference。"""
+    from maskit.native import get_backend
+
+    return get_backend().match_person_list(text, names)
 
 
 def mask_person_list_in_text(text: str, names: set[str], replacer) -> str:

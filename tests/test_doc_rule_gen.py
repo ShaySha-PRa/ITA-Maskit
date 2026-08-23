@@ -141,7 +141,7 @@ def _gui_flow(tmp_path: Path, doc_path: str) -> str:
             sys.executable, "-c", _GUI_HELPER,
             str(tmp_path / "rulesets"), str(tmp_path / "current"), str(doc_path),
         ],
-        capture_output=True, text=True, env=env, timeout=60,
+        capture_output=True, text=True, env=env, timeout=60, check=False,
     )
     assert proc.returncode == 0, f"GUI 子进程失败:\n{proc.stdout}\n{proc.stderr}"
     return proc.stdout

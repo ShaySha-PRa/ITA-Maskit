@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-import maskit.io.imageio as imageio
+from maskit.io import imageio
 
 
 @pytest.fixture

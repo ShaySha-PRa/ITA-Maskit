@@ -26,26 +26,84 @@ jobs:
       - name: Lint (ruff)
         run: ruff check maskit/ tests/
       - name: Test (pytest)
-        run: pytest tests/ -q
+        run: pytest tests/ --native-mode=python -q
 
-  # 每个 push 自动构建 Windows exe，供用户直接下载（无需自己打包）
-  build-exe:
-    runs-on: windows-latest
-    needs: test
+  native-linux:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install native build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libssl-dev python3-dev
+      - name: Install Python deps
+        run: pip install -e ".[dev]" pybind11
+      - name: Build native core
+        run: bash scripts/build_native.sh
+      - name: Differential tests
+        run: pytest tests/test_native_parity.py --native-mode=compare -q
+      - name: Kernel smoke
+        run: python scripts/bench_native_kernel.py
+
+  native-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: lukka/get-cmake@latest
+      - name: Install Python deps
+        run: pip install -e ".[dev]" pybind11
+      - name: Build native core
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_native.ps1
+      - name: Native parity smoke
+        run: powershell -ExecutionPolicy Bypass -File scripts/test_native.ps1
+
+  # 每个 push 分别构建 Python / Native 两个 Windows exe，用户按需下载
+  build-exe:
+    runs-on: windows-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: python
+            exe_name: ITA-Maskit
+            artifact: ITA-Maskit-exe
+          - variant: native
+            exe_name: ITA-Maskit-native
+            artifact: ITA-Maskit-native-exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: matrix.variant == 'native'
+      - uses: lukka/get-cmake@latest
+        if: matrix.variant == 'native'
       - name: Install dependencies
         run: |
           pip install -e ".[gui,image,llm,pdf]"
           pip install pyinstaller
+      - name: Build native core
+        if: matrix.variant == 'native'
+        run: |
+          pip install pybind11
+          powershell -ExecutionPolicy Bypass -File scripts/build_native.ps1
       - name: Build exe
+        env:
+          MASKIT_EXE_NAME: ${{ matrix.exe_name }}
+          MASKIT_BUNDLE_NATIVE: ${{ matrix.variant == 'native' && '1' || '0' }}
         run: python -m PyInstaller ITA-Maskit.spec --clean --noconfirm
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ITA-Maskit-exe
-          path: dist/ITA-Maskit.exe
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.exe_name }}.exe
           if-no-files-found: error

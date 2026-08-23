@@ -150,7 +150,7 @@ def test_excel_end_to_end(tmp_path):
     ).write_excel(src)
     rows = mask_file(src, out, load_ruleset(), None)
     assert rows == 2
-    masked = pl.read_excel(out)
+    masked = pl.read_excel(out, engine="openpyxl")
     assert masked["name"].to_list() == ["张*", "李*"]
     assert masked["ip"].to_list() == ["*.*.*.*", "*.*.*.*"]
 
@@ -375,8 +375,9 @@ def test_pdf_redact_missing_pymupdf(tmp_path, monkeypatch):
     import builtins
     import sys
 
-    import maskit.io.pdfio as pdfio
     from reportlab.pdfgen import canvas
+
+    from maskit.io import pdfio
 
     src = tmp_path / "in.pdf"
     out = tmp_path / "out.pdf"

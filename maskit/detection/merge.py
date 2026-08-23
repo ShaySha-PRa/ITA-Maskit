@@ -36,6 +36,9 @@ _TYPE_RANK = {
 
 _VALID_RANK = {"VALID": 2, "UNKNOWN": 1, "INVALID": 0}
 
+REASON_WHOLE_CELL = "whole_cell_winner"
+REASON_OUTRANKS = "outranks"
+
 
 class ConflictResolver:
     """Keep non-overlapping detections. Whole-cell hits suppress spans."""
@@ -54,8 +57,13 @@ class ConflictResolver:
             self.last_trace.append(
                 {
                     "winner": winner.entity_type,
+                    "reason_code": REASON_WHOLE_CELL,
                     "suppressed": [
-                        {"entity_type": r.entity_type, "reason": "whole-cell winner"}
+                        {
+                            "entity_type": r.entity_type,
+                            "reason": "whole-cell winner",
+                            "reason_code": REASON_WHOLE_CELL,
+                        }
                         for r in whole[1:]
                     ],
                 }
@@ -74,6 +82,7 @@ class ConflictResolver:
                 self.last_trace.append(
                     {
                         "winner": winner.entity_type,
+                        "reason_code": REASON_OUTRANKS,
                         "suppressed": [
                             {
                                 "entity_type": r.entity_type,
@@ -82,6 +91,7 @@ class ConflictResolver:
                                     f"{winner.entity_type} outranks "
                                     f"{r.evidence or r.recognizer} {r.entity_type}"
                                 ),
+                                "reason_code": REASON_OUTRANKS,
                             }
                         ],
                     }

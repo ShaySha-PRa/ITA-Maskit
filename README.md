@@ -18,13 +18,64 @@
 | **数据驱动规则** | YAML 覆盖/新增规则（正则 + 遮盖模板 + 版本号），响应每年变化的合规要求 |
 | **姓名/公司识别** | `--scan-names` 语义前缀 + 词表 + `--person-list` 全量人员清单，纯本地 |
 | **图片裁剪脱敏（beta）** | `--image-crop` OCR 定位敏感文字区域并裁剪掉（图变小），需 tesseract |
-| **高性能** | Polars 读表；脱敏热路径仍是逐格 Python。1 万行演示 CSV 本机约 0.8 秒 |
+| **高性能** | Polars 读表；热路径仍是逐格 Python（1 万行演示约 0.8 秒）。可选 Native Core 加速 HMAC / 人员清单 / 校验 |
 | **审计日志** | JSONL 记录操作、规则版本、pepper 指纹、伪名方案版本、复核条数（不存原文） |
+
+## 两个安装版本
+
+同一套 CLI / GUI，安装时二选一。功能与 gold/holdout 检出结果一致；Native 把热点内核放到 C++，Python 版不需要编译器。
+
+| | **Python 版（默认）** | **Native 版** |
+|--|--|--|
+| 适合 | 先跑通、办公机、无编译器 | 大批量 HMAC / 人员清单 / 校验 |
+| 依赖 | Python 3.10+ | 另需 CMake + C++ 编译器（Linux: g++、libssl；Windows: MSVC） |
+| 安装 | `pip install -e .` 或 `scripts/install.sh python` | `scripts/install.sh native` / `install.ps1 -Variant native` |
+| Windows exe | Artifacts **`ITA-Maskit-exe`** → `ITA-Maskit.exe` | Artifacts **`ITA-Maskit-native-exe`** → `ITA-Maskit-native.exe` |
+| 加速（本机测） | Polars | HMAC ~3×、人员清单 Trie ~26×、身份证校验 ~15×；整表 10k 行伪名化约 1.3× |
+| 检测 | YAML 正则 + checksum + 词典 | 同上；强制 native 时 phone / 工号 / 版本走 C++，gold/holdout 仍为 0 FP / 0 FN |
+
+```bash
+# Python 版（无需编译器）
+bash scripts/install.sh python
+# 需要 GUI / 图片 / LLM / PDF 时：
+bash scripts/install.sh python gui,image,llm,pdf
+
+# Native 版（会编译 maskit/_native）
+bash scripts/install.sh native
+bash scripts/install.sh native gui,image,llm,pdf
+```
+
+Windows（PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Variant python
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Variant native
+# 可选：-Extras gui,image,llm,pdf
+```
+
+等价手写步骤：
+
+```bash
+pip install -e .                    # Python 版
+pip install -e ".[native]"          # 只装 pybind11
+bash scripts/build_native.sh        # Linux：再编译扩展
+# Windows: powershell -File scripts/build_native.ps1
+```
+
+装好后用 `maskit --version` 确认：`[python]` 或 `[native 0.2.0]`。
+
+已装 Native 时，运行时仍可用环境变量切换（不重新安装）：
+
+| `MASKIT_NATIVE` | 行为 |
+|--|--|
+| 未设 / `auto` | 扩展在就用 Native 内核（HMAC / Trie 等）；检测扫描默认仍走 Python |
+| `0` / `python` | 强制纯 Python |
+| `1` / `native` | 强制 Native（扩展不存在则报错） |
 
 ## 快速开始
 
 ```bash
-# 安装
+# 安装（Python 版；Native 见上一节）
 pip install -e .
 
 # 1) 生成演示数据（10 万行，含各类敏感字段）
@@ -71,26 +122,42 @@ maskit audit
 ```bash
 git clone git@github.com:ShaySha-PRa/ITA-Maskit.git
 cd ITA-Maskit
-pip install -e ".[gui,image,llm,pdf]"   # 全部依赖（CLI + GUI + 图片 + LLM + PDF原样遮罩）
+# Python 版（默认）
+pip install -e ".[gui,image,llm,pdf]"
+# 或：bash scripts/install.sh python gui,image,llm,pdf
+
+# Native 版（需 CMake + 编译器）
+bash scripts/install.sh native gui,image,llm,pdf
+# Windows: powershell -File scripts/install.ps1 -Variant native -Extras gui,image,llm,pdf
+
 python -m maskit.gui_app            # 启动 GUI
 # 或用 CLI：maskit mask data.csv --pepper <密钥>
 ```
 
 ### 方式二：打包成 Windows exe（PyInstaller，单文件双击即用）
 
-在 **Windows** 上（已装 Python 3.10+）：
+在 **Windows** 上（已装 Python 3.10+）选一个版本打包：
 
-```bash
+```powershell
 git clone git@github.com:ShaySha-PRa/ITA-Maskit.git
 cd ITA-Maskit
-powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-# 自动安装依赖 → 打包 → 产出 dist/ITA-Maskit.exe（无需装 Python 即可分发）
+
+# Python 版 exe（无需编译器）→ dist/ITA-Maskit.exe
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant python
+
+# Native 版 exe（需 CMake + MSVC）→ dist/ITA-Maskit-native.exe
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant native
 ```
 
 ### 方式三：直接下载 exe（无需自己打包）
 
-仓库 GitHub Actions 在每次 push 到 main 时自动构建 exe：
-GitHub → Actions → 最新一次运行 → **Artifacts** → 下载 `ITA-Maskit-exe`，解压即得 `ITA-Maskit.exe`。
+仓库 GitHub Actions 在每次 push 到 main 时分别构建两个 exe：
+GitHub → Actions → 最新一次运行 → **Artifacts**，按需下载其一：
+
+| Artifact | 文件 | 版本 |
+|--|--|--|
+| `ITA-Maskit-exe` | `ITA-Maskit.exe` | Python 版（默认，无需本机编译器） |
+| `ITA-Maskit-native-exe` | `ITA-Maskit-native.exe` | Native 版（HMAC / Trie 等走 C++） |
 
 > **exe 注意**：
 > - 图片脱敏（beta）需安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) 二进制；**中文/英文语言包首次使用时自动下载**（约 28MB，无需手动装）
@@ -327,6 +394,7 @@ maskit mask report.pdf -o report_masked.pdf
 
 | 版本 | 内容 |
 |------|------|
+| **V5 Native Core**（可选） | 可选 C++ 内核（HMAC / 人员清单 Trie / 校验）；安装时选 Python 或 Native；gold/holdout 检出与 Python 对齐；不装编译器也能用完整 Python 版 |
 | **Hybrid Detection V2**（已合入 main，包版本仍 0.5.0） | 共享检测器（电话/工号/版本）+ 表格格内强特征扫描 + 证件校验 HITL（`review`/`strict`、复核清单、指纹白名单）+ 可选 `pseudo_v2` + PDF 回扫。合成 gold/stress 实体级 F1=1.0，**不是**生产语料准确率 |
 | **V5** (0.5.0) | 规则管理可视化（描述代替正则）+ 规则集新建/切换/导入导出 + 人员清单表格脱敏 + 文件列表预览/产出选择/防传错 + **上传敏感信息规定文档（PDF/Word/邮件/文本）→ AI 解析生成对应规则** |
 | **V4** (0.4.0) | Windows 桌面 GUI（PyQt5，拖拽/异步/实时处理·脱敏·进度统计）+ 引擎脱敏计数 + 打包脚本 |
@@ -354,9 +422,16 @@ maskit mask report.pdf -o report_masked.pdf
 ## 开发
 
 ```bash
+# Python 版开发依赖
 pip install -e ".[dev]"
-pytest            # 约 270 个测试（含 gold/stress/holdout、HITL、HMAC v2）；1 个 LLM 集成无 key 时 skip
-ruff check .      # 代码规范
+# 或：bash scripts/install.sh python dev
+
+pytest --native-mode=python   # 约 270 个测试（含 gold/stress/holdout、HITL、HMAC v2）；1 个 LLM 集成无 key 时 skip
+ruff check .                  # 代码规范
+
+# Native 版（需已编译 maskit/_native）
+bash scripts/install.sh native dev
+pytest tests/test_native_parity.py --native-mode=compare
 ```
 
 ## 性能
@@ -365,8 +440,9 @@ ruff check .      # 代码规范
 |------|------|
 | 100 万行，全 mask（8 列） | ~4 秒（27 万行/秒）（V2 前参考数字，未在本机重测百万行） |
 | 1 万行演示 CSV（V2 热路径，本机 WSL） | 中位约 0.80 秒（相对 0.726s 基线约 +10%） |
+| Native HMAC 10 万次 / 人员清单 Trie | 相对纯 Python 约 3× / 26×（见 `benchmark/results/python_vs_native.json`） |
 
-参考机型：2020 年后普通笔记本。表格热路径仍是 Polars `map_elements` + 逐格 Python，不是纯 Polars 表达式。
+参考机型：2020 年后普通笔记本。表格热路径仍是 Polars `map_elements` + 逐格 Python；Native 主要加速伪名化与清单扫描内核，不是整表表达式化。
 
 ## 免责声明
 

@@ -29,6 +29,52 @@ _EID = EmployeeIdRecognizer()
 _VER = AppVersionRecognizer()
 
 
+def _backend():
+    from maskit.native import get_backend, resolve_mode
+
+    # Forced native only. compare would recurse through Python fallback
+    # detect_text_batch → detect_text. auto keeps Python scanners so
+    # gold/holdout stay on the reference unless MASKIT_NATIVE=1.
+    if resolve_mode() != "native":
+        return None
+    try:
+        be = get_backend()
+    except RuntimeError:
+        return None
+    if getattr(be, "name", "") == "python":
+        return None
+    return be
+
+
+def _hit_from_dict(d: dict, ctx: DetectContext) -> DetectionResult:
+    return DetectionResult(
+        entity_type=d["entity_type"],
+        original_value=d["original_value"],
+        normalized_value=d.get("normalized_value", d["original_value"]),
+        confidence=float(d.get("confidence", 0.0)),
+        recognizer=d.get("recognizer", ""),
+        reason=d.get("reason", ""),
+        source=ctx.source,
+        start=d.get("start"),
+        end=d.get("end"),
+        column=ctx.column,
+        sheet=ctx.sheet,
+        page=ctx.page,
+        subtype=d.get("subtype", ""),
+        validation_status=d.get("validation_status", "UNKNOWN"),
+        evidence=d.get("evidence", ""),
+        scope=ctx.path,
+    )
+
+
+def _prefixes(ruleset: RuleSet) -> list[str]:
+    from maskit.detection.scope import DEFAULT_EMPLOYEE_PREFIXES
+
+    rule = ruleset.defs.get("employee_id")
+    raw = getattr(rule, "prefixes", None) or DEFAULT_EMPLOYEE_PREFIXES
+    return [p.upper() for p in raw if p]
+
+
 def _annotate_id_bank(hits: list[DetectionResult]) -> list[DetectionResult]:
     out: list[DetectionResult] = []
     for h in hits:
@@ -66,7 +112,16 @@ def detect_cell(
         sheet=sheet,
         path="structured",
     )
-    specialized = _PHONE.detect(s, ctx) + _EID.detect(s, ctx) + _VER.detect(s, ctx)
+    be = _backend()
+    if be is not None and ctx.mapped_rule is not None and ctx.mapped_rule.name in {
+        "phone",
+        "employee_id",
+        "app_version",
+    }:
+        row = be.detect_column_batch([s], ctx.mapped_rule.name, _prefixes(ruleset))[0]
+        specialized = [_hit_from_dict(row, ctx)] if row else []
+    else:
+        specialized = _PHONE.detect(s, ctx) + _EID.detect(s, ctx) + _VER.detect(s, ctx)
     col_hits = _COLUMN.detect(s, ctx)
     if col_hits:
         return _annotate_id_bank(_RESOLVER.merge(col_hits + specialized, text_len=len(s)))
@@ -109,9 +164,23 @@ def detect_text(
         path="document",
     )
     raw = _REGEX_SEARCH.detect(text, ctx)
-    raw.extend(_PHONE.detect(text, ctx))
-    raw.extend(_EID.detect(text, ctx))
-    raw.extend(_VER.detect(text, ctx))
+    be = _backend()
+    if be is not None:
+        native_rows = be.detect_text_batch(
+            [text],
+            _prefixes(ruleset),
+            None,
+            False,
+        )[0]
+        raw.extend(
+            _hit_from_dict(d, ctx)
+            for d in native_rows
+            if d.get("entity_type") in {"phone", "employee_id", "app_version"}
+        )
+    else:
+        raw.extend(_PHONE.detect(text, ctx))
+        raw.extend(_EID.detect(text, ctx))
+        raw.extend(_VER.detect(text, ctx))
     if scan_names:
         raw.extend(_DICT_SPAN.detect(text, ctx))
     raw.extend(_CHECKSUM.detect(text, ctx))

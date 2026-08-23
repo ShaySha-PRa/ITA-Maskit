@@ -185,5 +185,5 @@ def extract_doc_text(path: str) -> str:
         return Path(path).read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         raise ValueError(f"文档不存在: {path}") from None
-    except Exception as exc:  # noqa: BLE001 — 文档解析失败统一转用户错误
+    except Exception as exc:
         raise ValueError(f"无法读取文档 {path}: {exc}") from exc

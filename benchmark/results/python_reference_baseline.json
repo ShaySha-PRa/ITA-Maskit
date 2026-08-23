@@ -1,0 +1,1191 @@
+{
+  "label": "python_reference_baseline",
+  "commit": "7c1518f",
+  "branch": "feature/native-core-v1",
+  "python": "3.10.12",
+  "platform": "linux",
+  "windows_exe_smoke": "not_run_desktop_copy_removed",
+  "notes": "Authoritative Python reference before native migration. Default 10k CSV uses mask (no pepper). Separate pseudo+pepper path recorded.",
+  "pytest": {
+    "returncode": 0,
+    "summary": "...............................................................X.        [100%]",
+    "stderr_tail": []
+  },
+  "ruff": {
+    "returncode": 1,
+    "stdout_tail": [
+      "13 |",
+      "   |",
+      "",
+      "Found 17 errors.",
+      "[*] 11 fixable with the `--fix` option (3 hidden fixes can be enabled with the `--unsafe-fixes` option)."
+    ]
+  },
+  "gold": {
+    "n_cases": 33,
+    "tp": 24,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "fpr": 0.0,
+    "fnr": 0.0,
+    "by_type": {
+      "app_version": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "bank_card": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "company": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "email": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "id_card": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "ip": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "name": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "phone": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      }
+    }
+  },
+  "stress": {
+    "n_cases": 1716,
+    "tp": 1891,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "fpr": 0.0,
+    "fnr": 0.0,
+    "by_type": {
+      "app_version": {
+        "tp": 65,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "bank_card": {
+        "tp": 180,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "company": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "email": {
+        "tp": 415,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "employee_id": {
+        "tp": 30,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "id_card": {
+        "tp": 360,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "ip": {
+        "tp": 330,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "name": {
+        "tp": 96,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "phone": {
+        "tp": 410,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      }
+    }
+  },
+  "holdout": {
+    "n_cases": 1716,
+    "seed": 20260822,
+    "tp": 1891,
+    "fp": 0,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "fpr": 0.0,
+    "fnr": 0.0,
+    "by_type": {
+      "app_version": {
+        "tp": 65,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "bank_card": {
+        "tp": 180,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "company": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "email": {
+        "tp": 415,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "employee_id": {
+        "tp": 30,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "id_card": {
+        "tp": 360,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "ip": {
+        "tp": 330,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "name": {
+        "tp": 96,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      },
+      "phone": {
+        "tp": 410,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "fpr": 0.0,
+        "fnr": 0.0
+      }
+    }
+  },
+  "perf_10k_csv_mask": {
+    "runs": [
+      0.8293840750002346,
+      0.8376753130005454,
+      0.8411987230001614,
+      0.8534417290002239,
+      0.8914097329998185
+    ],
+    "min": 0.8293840750002346,
+    "median": 0.8411987230001614,
+    "max": 0.8914097329998185
+  },
+  "perf_10k_csv_pseudo": {
+    "runs": [
+      1.4077194419996886,
+      1.4118843300002482,
+      1.4407072530002552
+    ],
+    "min": 1.4077194419996886,
+    "median": 1.4118843300002482,
+    "max": 1.4407072530002552
+  },
+  "perf_100k_csv_mask": {
+    "runs": [
+      6.535875975000636
+    ],
+    "min": 6.535875975000636,
+    "median": 6.535875975000636,
+    "max": 6.535875975000636
+  },
+  "hmac_golden_vectors": [
+    {
+      "value": "",
+      "value_len": 0,
+      "entity_type": "email",
+      "normalizer_version": "1",
+      "pepper": "maskit-test-pepper-not-production",
+      "expected_v1": "9A958B7A",
+      "expected_v2": "AFEE8FFFB2DE0490F337DD01"
+    },
+    {
+      "value": "13800138000",
+      "value_len": 11,
+      "entity_type": "phone",
+      "normalizer_version": "1",
+      "pepper": "maskit-test-pepper-not-production",
+      "expected_v1": "4E231046",
+      "expected_v2": "7C26DEB91062E9A5B5563B66"
+    },
+    {
+      "value": "alice@corp.example",
+      "value_len": 18,
+      "entity_type": "email",
+      "normalizer_version": "1",
+      "pepper": "maskit-test-pepper-not-production",
+      "expected_v1": "8D3512B4",
+      "expected_v2": "AF266C7DF624E54BC10190A3"
+    },
+    {
+      "value": "张伟",
+      "value_len": 2,
+      "entity_type": "name",
+      "normalizer_version": "1",
+      "pepper": "maskit-test-pepper-not-production",
+      "expected_v1": "7334D813",
+      "expected_v2": "08E70D99B0B52DFC8520BF7F"
+    },
+    {
+      "value": "<len=4096>",
+      "value_len": 4096,
+      "entity_type": "account",
+      "normalizer_version": "1",
+      "pepper": "maskit-test-pepper-not-production",
+      "expected_v1": "F03C50B8",
+      "expected_v2": "21EE2460CC746A943FA7D517"
+    },
+    {
+      "value": "EID-7F3A",
+      "value_len": 8,
+      "entity_type": "employee_id",
+      "normalizer_version": "1",
+      "pepper": "maskit-test-pepper-not-production",
+      "expected_v1": "95832B1A",
+      "expected_v2": "F2DD2DB9D49D3FEB95596EEE"
+    }
+  ],
+  "maxrss_kb_after_benches": 199652,
+  "cprofile": {
+    "csv_10k_mask": {
+      "title": "csv_10k_mask",
+      "wall_seconds": 0.9842119270006151,
+      "top": [
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'collect' of 'builtins.PyLazyFrame' objects>",
+          "calls": 20,
+          "tottime": 0.940022134,
+          "cumtime": 0.940022134
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method read_csv>",
+          "calls": 1,
+          "tottime": 0.017778783,
+          "cumtime": 0.017778783
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py",
+          "line": 673,
+          "func": "apply_rules",
+          "calls": 1,
+          "tottime": 0.002985208,
+          "cumtime": 0.9336736330000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 28,
+          "func": "<listcomp>",
+          "calls": 4,
+          "tottime": 0.002838034,
+          "cumtime": 0.003983516
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 51,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0019390960000000002,
+          "cumtime": 0.0019390960000000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 44,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0017770470000000001,
+          "cumtime": 0.002059575
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 47,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0017343360000000002,
+          "cumtime": 0.0017343360000000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/scripts/record_python_baseline.py",
+          "line": 250,
+          "func": "mask_10k",
+          "calls": 1,
+          "tottime": 0.0017226650000000002,
+          "cumtime": 0.9841947160000001
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method new_str>",
+          "calls": 8,
+          "tottime": 0.001531325,
+          "cumtime": 0.001531325
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method builtins.len>",
+          "calls": 40158,
+          "tottime": 0.001185923,
+          "cumtime": 0.001192214
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 38,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0008149120000000001,
+          "cumtime": 0.0008149120000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 50,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.000764861,
+          "cumtime": 0.000764861
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method posix.mkdir>",
+          "calls": 1,
+          "tottime": 0.0006524580000000001,
+          "cumtime": 0.0006524580000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 41,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.000564445,
+          "cumtime": 0.000564445
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'zfill' of 'str' objects>",
+          "calls": 10000,
+          "tottime": 0.00028252800000000004,
+          "cumtime": 0.00028252800000000004
+        }
+      ],
+      "pstats_head": [
+        "         56120 function calls (56100 primitive calls) in 0.984 seconds",
+        "",
+        "   Ordered by: internal time",
+        "   List reduced from 332 to 20 due to restriction <20>",
+        "",
+        "   ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "       20    0.940    0.047    0.940    0.047 {method 'collect' of 'builtins.PyLazyFrame' objects}",
+        "        1    0.018    0.018    0.018    0.018 {built-in method read_csv}",
+        "        1    0.003    0.003    0.934    0.934 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py:673(apply_rules)",
+        "        4    0.003    0.001    0.004    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:28(<listcomp>)",
+        "        1    0.002    0.002    0.002    0.002 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:51(<listcomp>)",
+        "        1    0.002    0.002    0.002    0.002 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:44(<listcomp>)",
+        "        1    0.002    0.002    0.002    0.002 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:47(<listcomp>)",
+        "        1    0.002    0.002    0.984    0.984 /home/joshua/projects/ITA-maskit-wt-native-core/scripts/record_python_baseline.py:250(mask_10k)",
+        "        8    0.002    0.000    0.002    0.000 {built-in method new_str}",
+        "40174/40158    0.001    0.000    0.001    0.000 {built-in method builtins.len}",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:38(<listcomp>)",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:50(<listcomp>)",
+        "        1    0.001    0.001    0.001    0.001 {built-in method posix.mkdir}",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:41(<listcomp>)",
+        "    10000    0.000    0.000    0.000    0.000 {method 'zfill' of 'str' objects}",
+        "        1    0.000    0.000    0.963    0.963 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/io/csvio.py:55(mask_csv_file)",
+        "      208    0.000    0.000    0.001    0.000 /usr/lib/python3.10/dis.py:311(_get_instructions_bytes)",
+        "        2    0.000    0.000    0.000    0.000 {built-in method posix.unlink}",
+        "       20    0.000    0.000    0.941    0.047 /home/joshua/.local/lib/python3.10/site-packages/polars/lazyframe/opt_flags.py:345(wrapper)",
+        "       20    0.000    0.000    0.940    0.047 /home/joshua/.local/lib/python3.10/site-packages/polars/lazyframe/frame.py:2411(collect)",
+        "",
+        ""
+      ]
+    },
+    "csv_10k_pseudo": {
+      "title": "csv_10k_pseudo",
+      "wall_seconds": 1.651552520000223,
+      "top": [
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'collect' of 'builtins.PyLazyFrame' objects>",
+          "calls": 20,
+          "tottime": 1.6149534730000001,
+          "cumtime": 1.6149534730000001
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method read_csv>",
+          "calls": 1,
+          "tottime": 0.013790695,
+          "cumtime": 0.013790695
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py",
+          "line": 673,
+          "func": "apply_rules",
+          "calls": 1,
+          "tottime": 0.0032533920000000003,
+          "cumtime": 1.60959555
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 28,
+          "func": "<listcomp>",
+          "calls": 4,
+          "tottime": 0.0022679790000000003,
+          "cumtime": 0.0033195440000000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/scripts/record_python_baseline.py",
+          "line": 257,
+          "func": "pseudo_10k",
+          "calls": 1,
+          "tottime": 0.001559501,
+          "cumtime": 1.6515426700000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 44,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0013815490000000001,
+          "cumtime": 0.001668694
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 47,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.001333486,
+          "cumtime": 0.001333486
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 51,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0013317860000000002,
+          "cumtime": 0.0013317860000000002
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method builtins.len>",
+          "calls": 40158,
+          "tottime": 0.001083915,
+          "cumtime": 0.001089715
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method new_str>",
+          "calls": 8,
+          "tottime": 0.001045038,
+          "cumtime": 0.001045038
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 38,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0007625910000000001,
+          "cumtime": 0.0007625910000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 50,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.0006819980000000001,
+          "cumtime": 0.0006819980000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py",
+          "line": 41,
+          "func": "<listcomp>",
+          "calls": 1,
+          "tottime": 0.000558744,
+          "cumtime": 0.000558744
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method posix.mkdir>",
+          "calls": 1,
+          "tottime": 0.00048351300000000003,
+          "cumtime": 0.00048351300000000003
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'zfill' of 'str' objects>",
+          "calls": 10000,
+          "tottime": 0.00028714500000000004,
+          "cumtime": 0.00028714500000000004
+        }
+      ],
+      "pstats_head": [
+        "         56120 function calls (56100 primitive calls) in 1.652 seconds",
+        "",
+        "   Ordered by: internal time",
+        "   List reduced from 332 to 20 due to restriction <20>",
+        "",
+        "   ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "       20    1.615    0.081    1.615    0.081 {method 'collect' of 'builtins.PyLazyFrame' objects}",
+        "        1    0.014    0.014    0.014    0.014 {built-in method read_csv}",
+        "        1    0.003    0.003    1.610    1.610 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py:673(apply_rules)",
+        "        4    0.002    0.001    0.003    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:28(<listcomp>)",
+        "        1    0.002    0.002    1.652    1.652 /home/joshua/projects/ITA-maskit-wt-native-core/scripts/record_python_baseline.py:257(pseudo_10k)",
+        "        1    0.001    0.001    0.002    0.002 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:44(<listcomp>)",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:47(<listcomp>)",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:51(<listcomp>)",
+        "40174/40158    0.001    0.000    0.001    0.000 {built-in method builtins.len}",
+        "        8    0.001    0.000    0.001    0.000 {built-in method new_str}",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:38(<listcomp>)",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:50(<listcomp>)",
+        "        1    0.001    0.001    0.001    0.001 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/demo.py:41(<listcomp>)",
+        "        1    0.000    0.000    0.000    0.000 {built-in method posix.mkdir}",
+        "    10000    0.000    0.000    0.000    0.000 {method 'zfill' of 'str' objects}",
+        "        1    0.000    0.000    1.635    1.635 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/io/csvio.py:55(mask_csv_file)",
+        "      208    0.000    0.000    0.001    0.000 /usr/lib/python3.10/dis.py:311(_get_instructions_bytes)",
+        "        2    0.000    0.000    0.000    0.000 {built-in method posix.unlink}",
+        "        8    0.000    0.000    0.000    0.000 /usr/lib/python3.10/inspect.py:2280(_signature_from_function)",
+        "       20    0.000    0.000    1.616    0.081 /home/joshua/.local/lib/python3.10/site-packages/polars/lazyframe/opt_flags.py:345(wrapper)",
+        "",
+        ""
+      ]
+    },
+    "hmac_50k": {
+      "title": "hmac_50k",
+      "wall_seconds": 0.26969787400048517,
+      "top": [
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method _hashlib.hmac_new>",
+          "calls": 100000,
+          "tottime": 0.036399769000000005,
+          "cumtime": 0.036399769000000005
+        },
+        {
+          "file": "/usr/lib/python3.10/hmac.py",
+          "line": 38,
+          "func": "__init__",
+          "calls": 100000,
+          "tottime": 0.031168763000000002,
+          "cumtime": 0.096413096
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py",
+          "line": 102,
+          "func": "hmac_digest",
+          "calls": 50000,
+          "tottime": 0.031120496,
+          "cumtime": 0.12404867800000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py",
+          "line": 61,
+          "func": "_domain_key",
+          "calls": 50000,
+          "tottime": 0.026983489000000003,
+          "cumtime": 0.119990603
+        },
+        {
+          "file": "/usr/lib/python3.10/hmac.py",
+          "line": 66,
+          "func": "_init_hmac",
+          "calls": 100000,
+          "tottime": 0.020011029,
+          "cumtime": 0.056410798000000005
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'hexdigest' of '_hashlib.HMAC' objects>",
+          "calls": 50000,
+          "tottime": 0.017054646,
+          "cumtime": 0.017054646
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'digest' of '_hashlib.HMAC' objects>",
+          "calls": 50000,
+          "tottime": 0.016480764000000002,
+          "cumtime": 0.016480764000000002
+        },
+        {
+          "file": "/usr/lib/python3.10/hmac.py",
+          "line": 167,
+          "func": "new",
+          "calls": 100000,
+          "tottime": 0.015731582,
+          "cumtime": 0.11214467800000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py",
+          "line": 108,
+          "func": "pseudo_hash",
+          "calls": 50000,
+          "tottime": 0.013381127000000001,
+          "cumtime": 0.263846933
+        },
+        {
+          "file": "/usr/lib/python3.10/hmac.py",
+          "line": 151,
+          "func": "digest",
+          "calls": 50000,
+          "tottime": 0.010876137000000001,
+          "cumtime": 0.031067875000000002
+        },
+        {
+          "file": "/usr/lib/python3.10/hmac.py",
+          "line": 161,
+          "func": "hexdigest",
+          "calls": 50000,
+          "tottime": 0.010535331,
+          "cumtime": 0.031122376
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method builtins.isinstance>",
+          "calls": 200000,
+          "tottime": 0.008833535,
+          "cumtime": 0.008833535
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'encode' of 'str' objects>",
+          "calls": 150000,
+          "tottime": 0.008477236,
+          "cumtime": 0.008477236
+        },
+        {
+          "file": "/usr/lib/python3.10/hmac.py",
+          "line": 139,
+          "func": "_current",
+          "calls": 100000,
+          "tottime": 0.007243373000000001,
+          "cumtime": 0.007243373000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py",
+          "line": 68,
+          "func": "pseudo_key",
+          "calls": 50000,
+          "tottime": 0.006426525000000001,
+          "cumtime": 0.12641712800000002
+        }
+      ],
+      "pstats_head": [
+        "         1300002 function calls in 0.270 seconds",
+        "",
+        "   Ordered by: internal time",
+        "",
+        "   ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "   100000    0.036    0.000    0.036    0.000 {built-in method _hashlib.hmac_new}",
+        "   100000    0.031    0.000    0.096    0.000 /usr/lib/python3.10/hmac.py:38(__init__)",
+        "    50000    0.031    0.000    0.124    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py:102(hmac_digest)",
+        "    50000    0.027    0.000    0.120    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py:61(_domain_key)",
+        "   100000    0.020    0.000    0.056    0.000 /usr/lib/python3.10/hmac.py:66(_init_hmac)",
+        "    50000    0.017    0.000    0.017    0.000 {method 'hexdigest' of '_hashlib.HMAC' objects}",
+        "    50000    0.016    0.000    0.016    0.000 {method 'digest' of '_hashlib.HMAC' objects}",
+        "   100000    0.016    0.000    0.112    0.000 /usr/lib/python3.10/hmac.py:167(new)",
+        "    50000    0.013    0.000    0.264    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py:108(pseudo_hash)",
+        "    50000    0.011    0.000    0.031    0.000 /usr/lib/python3.10/hmac.py:151(digest)",
+        "    50000    0.011    0.000    0.031    0.000 /usr/lib/python3.10/hmac.py:161(hexdigest)",
+        "   200000    0.009    0.000    0.009    0.000 {built-in method builtins.isinstance}",
+        "   150000    0.008    0.000    0.008    0.000 {method 'encode' of 'str' objects}",
+        "   100000    0.007    0.000    0.007    0.000 /usr/lib/python3.10/hmac.py:139(_current)",
+        "    50000    0.006    0.000    0.126    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/engine.py:68(pseudo_key)",
+        "        1    0.006    0.006    0.270    0.270 /home/joshua/projects/ITA-maskit-wt-native-core/scripts/record_python_baseline.py:264(hmac_50k)",
+        "    50000    0.003    0.000    0.003    0.000 {method 'upper' of 'str' objects}",
+        "        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}",
+        "",
+        ""
+      ]
+    },
+    "person_list_10k_cells": {
+      "title": "person_list_10k_cells",
+      "wall_seconds": 0.21350190799967095,
+      "top": [
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/pipeline.py",
+          "line": 42,
+          "func": "detect_cell",
+          "calls": 10000,
+          "tottime": 0.024002112000000003,
+          "cumtime": 0.21077848500000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/regex.py",
+          "line": 68,
+          "func": "_fullmatch",
+          "calls": 10000,
+          "tottime": 0.014890378000000001,
+          "cumtime": 0.087665991
+        },
+        {
+          "file": "<string>",
+          "line": 2,
+          "func": "__init__",
+          "calls": 10000,
+          "tottime": 0.012265120000000001,
+          "cumtime": 0.016496203
+        },
+        {
+          "file": "/usr/lib/python3.10/re.py",
+          "line": 288,
+          "func": "_compile",
+          "calls": 60000,
+          "tottime": 0.011366626000000001,
+          "cumtime": 0.016257279
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py",
+          "line": 95,
+          "func": "_key",
+          "calls": 10000,
+          "tottime": 0.010934301,
+          "cumtime": 0.015987808000000003
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/canonical.py",
+          "line": 29,
+          "func": "canonical_for_rule",
+          "calls": 40000,
+          "tottime": 0.009618952,
+          "cumtime": 0.036858986
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py",
+          "line": 46,
+          "func": "merge",
+          "calls": 10000,
+          "tottime": 0.008783908,
+          "cumtime": 0.029475829000000002
+        },
+        {
+          "file": "/usr/lib/python3.10/re.py",
+          "line": 192,
+          "func": "fullmatch",
+          "calls": 40000,
+          "tottime": 0.008487419000000001,
+          "cumtime": 0.024311847
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/canonical.py",
+          "line": 15,
+          "func": "to_halfwidth",
+          "calls": 10000,
+          "tottime": 0.007967179000000001,
+          "cumtime": 0.011774151
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/employee.py",
+          "line": 21,
+          "func": "_prefixes",
+          "calls": 10000,
+          "tottime": 0.006979714000000001,
+          "cumtime": 0.014316461
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/dictionary.py",
+          "line": 116,
+          "func": "_hit",
+          "calls": 10000,
+          "tottime": 0.0061250210000000005,
+          "cumtime": 0.022621224000000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/regex.py",
+          "line": 62,
+          "func": "<listcomp>",
+          "calls": 10000,
+          "tottime": 0.005858129,
+          "cumtime": 0.007436862000000001
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'get' of 'dict' objects>",
+          "calls": 120000,
+          "tottime": 0.005647114,
+          "cumtime": 0.005647114
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'fullmatch' of 're.Pattern' objects>",
+          "calls": 40000,
+          "tottime": 0.005116698,
+          "cumtime": 0.005116698
+        },
+        {
+          "file": "/usr/lib/python3.10/re.py",
+          "line": 202,
+          "func": "sub",
+          "calls": 20000,
+          "tottime": 0.005021355,
+          "cumtime": 0.014930117000000001
+        }
+      ],
+      "pstats_head": [
+        "         932002 function calls in 0.210 seconds",
+        "",
+        "   Ordered by: internal time",
+        "   List reduced from 42 to 20 due to restriction <20>",
+        "",
+        "   ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "    10000    0.024    0.000    0.211    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/pipeline.py:42(detect_cell)",
+        "    10000    0.015    0.000    0.088    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/regex.py:68(_fullmatch)",
+        "    10000    0.012    0.000    0.016    0.000 <string>:2(__init__)",
+        "    60000    0.011    0.000    0.016    0.000 /usr/lib/python3.10/re.py:288(_compile)",
+        "    10000    0.011    0.000    0.016    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py:95(_key)",
+        "    40000    0.010    0.000    0.037    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/canonical.py:29(canonical_for_rule)",
+        "    10000    0.009    0.000    0.029    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py:46(merge)",
+        "    40000    0.008    0.000    0.024    0.000 /usr/lib/python3.10/re.py:192(fullmatch)",
+        "    10000    0.008    0.000    0.012    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/canonical.py:15(to_halfwidth)",
+        "    10000    0.007    0.000    0.014    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/employee.py:21(_prefixes)",
+        "    10000    0.006    0.000    0.023    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/dictionary.py:116(_hit)",
+        "    10000    0.006    0.000    0.007    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/regex.py:62(<listcomp>)",
+        "   120000    0.006    0.000    0.006    0.000 {method 'get' of 'dict' objects}",
+        "    40000    0.005    0.000    0.005    0.000 {method 'fullmatch' of 're.Pattern' objects}",
+        "    20000    0.005    0.000    0.015    0.000 /usr/lib/python3.10/re.py:202(sub)",
+        "    60000    0.005    0.000    0.005    0.000 {built-in method builtins.isinstance}",
+        "    60000    0.005    0.000    0.005    0.000 {method 'startswith' of 'str' objects}",
+        "    40000    0.005    0.000    0.006    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/employee.py:24(<genexpr>)",
+        "    20000    0.004    0.000    0.004    0.000 {method 'sub' of 're.Pattern' objects}",
+        "    10000    0.004    0.000    0.032    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/dictionary.py:24(detect)",
+        "",
+        ""
+      ]
+    },
+    "text_detect_long": {
+      "title": "text_detect_long",
+      "wall_seconds": 0.9562635729998874,
+      "top": [
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py",
+          "line": 71,
+          "func": "<genexpr>",
+          "calls": 8001,
+          "tottime": 0.351605589,
+          "cumtime": 0.351605589
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 184,
+          "func": "iter_person_list_spans",
+          "calls": 3,
+          "tottime": 0.314348316,
+          "cumtime": 0.519483985
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method builtins.len>",
+          "calls": 2388006,
+          "tottime": 0.066293459,
+          "cumtime": 0.066293459
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<built-in method builtins.any>",
+          "calls": 42000,
+          "tottime": 0.038299378,
+          "cumtime": 0.123611461
+        },
+        {
+          "file": "~",
+          "line": 0,
+          "func": "<method 'startswith' of 'str' objects>",
+          "calls": 616001,
+          "tottime": 0.029459406,
+          "cumtime": 0.029459406
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 159,
+          "func": "<genexpr>",
+          "calls": 144000,
+          "tottime": 0.012284117,
+          "cumtime": 0.018633208000000002
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 155,
+          "func": "<genexpr>",
+          "calls": 138000,
+          "tottime": 0.011999838,
+          "cumtime": 0.017998238
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/canonical.py",
+          "line": 15,
+          "func": "to_halfwidth",
+          "calls": 2,
+          "tottime": 0.010440782000000001,
+          "cumtime": 0.015372809000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 157,
+          "func": "<genexpr>",
+          "calls": 96000,
+          "tottime": 0.008231718,
+          "cumtime": 0.012398283000000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py",
+          "line": 46,
+          "func": "merge",
+          "calls": 1,
+          "tottime": 0.008142128,
+          "cumtime": 0.369334624
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 200,
+          "func": "<genexpr>",
+          "calls": 78000,
+          "tottime": 0.007718797,
+          "cumtime": 0.011529928
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 144,
+          "func": "_is_longer_name_trap",
+          "calls": 6000,
+          "tottime": 0.007167183000000001,
+          "cumtime": 0.12125118400000001
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 151,
+          "func": "<genexpr>",
+          "calls": 64000,
+          "tottime": 0.0067445180000000006,
+          "cumtime": 0.009863518
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py",
+          "line": 161,
+          "func": "<genexpr>",
+          "calls": 78000,
+          "tottime": 0.006672247,
+          "cumtime": 0.009995446
+        },
+        {
+          "file": "/home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/phone.py",
+          "line": 90,
+          "func": "find_phones",
+          "calls": 1,
+          "tottime": 0.006509712000000001,
+          "cumtime": 0.020231747
+        }
+      ],
+      "pstats_head": [
+        "         4092264 function calls in 0.956 seconds",
+        "",
+        "   Ordered by: internal time",
+        "   List reduced from 95 to 20 due to restriction <20>",
+        "",
+        "   ncalls  tottime  percall  cumtime  percall filename:lineno(function)",
+        "     8001    0.352    0.000    0.352    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py:71(<genexpr>)",
+        "        3    0.314    0.105    0.519    0.173 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:184(iter_person_list_spans)",
+        "  2388006    0.066    0.000    0.066    0.000 {built-in method builtins.len}",
+        "    42000    0.038    0.000    0.124    0.000 {built-in method builtins.any}",
+        "   616001    0.029    0.000    0.029    0.000 {method 'startswith' of 'str' objects}",
+        "   144000    0.012    0.000    0.019    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:159(<genexpr>)",
+        "   138000    0.012    0.000    0.018    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:155(<genexpr>)",
+        "        2    0.010    0.005    0.015    0.008 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/canonical.py:15(to_halfwidth)",
+        "    96000    0.008    0.000    0.012    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:157(<genexpr>)",
+        "        1    0.008    0.008    0.369    0.369 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py:46(merge)",
+        "    78000    0.008    0.000    0.012    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:200(<genexpr>)",
+        "     6000    0.007    0.000    0.121    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:144(_is_longer_name_trap)",
+        "    64000    0.007    0.000    0.010    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:151(<genexpr>)",
+        "    78000    0.007    0.000    0.010    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/rules/name_company.py:161(<genexpr>)",
+        "        1    0.007    0.007    0.020    0.020 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/phone.py:90(find_phones)",
+        "     6001    0.006    0.000    0.008    0.000 <string>:2(__init__)",
+        "     2000    0.004    0.000    0.007    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/phone.py:33(canonical_phone)",
+        "        1    0.004    0.004    0.005    0.005 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/regex.py:85(_search)",
+        "   132022    0.004    0.000    0.004    0.000 {method 'append' of 'list' objects}",
+        "     6001    0.004    0.000    0.005    0.000 /home/joshua/projects/ITA-maskit-wt-native-core/maskit/detection/merge.py:95(_key)",
+        "",
+        ""
+      ]
+    }
+  },
+  "maxrss_kb_after_profile": 202528
+}

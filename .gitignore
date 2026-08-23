@@ -33,3 +33,9 @@ CLAUDE.md
 
 # Personal docs (resume, etc. — not for distribution)
 docs/
+
+# Native C++ build artifacts (source under native/ is tracked)
+native/build/
+maskit/_native*.so
+maskit/_native*.pyd
+maskit/_native*.dll

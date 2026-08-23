@@ -99,6 +99,11 @@ def pseudo_hash_v2(
     return hmac.new(key, msg, hashlib.sha256).hexdigest()[:length].upper()
 
 
+def digits_from_hex(hex_str: str, n: int) -> str:
+    """HMAC hex → deterministic decimal digits (shared with native parity)."""
+    return "".join(str(int(c, 16) % 10) for c in hex_str)[:n].ljust(n, "0")
+
+
 def hmac_digest(value: str, key: bytes, length: int = 8) -> str:
     """确定性 HMAC 哈希，输出 hex 前缀。"""
     digest = hmac.new(key, value.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -117,6 +122,7 @@ def render_template(
     *,
     scheme: str = "v1",
     entity_type: str = "",
+    hmac_hex: str | None = None,
 ) -> str:
     """渲染遮盖/伪名模板。
 
@@ -135,7 +141,9 @@ def render_template(
     if "{hash:8}" in template:
         if pepper is None:
             raise ValueError("pseudo 策略需要 --pepper（或 MASKIT_PEPPER）才能生成确定性伪名")
-        if scheme == "v2":
+        if hmac_hex is not None:
+            digest = hmac_hex[:24] if scheme == "v2" else hmac_hex[:8]
+        elif scheme == "v2":
             digest = pseudo_hash_v2(value, pepper, entity_type or "unknown", length=24)
         else:
             digest = pseudo_hash(value, pepper, 8)
@@ -183,12 +191,13 @@ def render_template(
             raise ValueError("pseudo 策略需要 --pepper")
         n = len(re.sub(r"\D", "", value))
         n = n or 11
-        if scheme == "v2":
+        if hmac_hex is not None:
+            h = hmac_hex[: max(16, n)] if scheme == "v2" else hmac_hex[:16]
+        elif scheme == "v2":
             h = pseudo_hash_v2(value, pepper, entity_type or "unknown", length=max(16, n))
         else:
             h = pseudo_hash(value, pepper, 16)
-        # 由哈希派生 n 位数字（确定性）
-        digits = "".join(str(int(c, 16) % 10) for c in h)[:n].ljust(n, "0")
+        digits = digits_from_hex(h, n)
         template = template.replace("{digits}", digits)
 
     # {major}：版本主号
@@ -670,6 +679,115 @@ def preview_dataframe(
     return results
 
 
+def _template_needs_hmac(template: str) -> bool:
+    return "{hash:8}" in template or "{digits}" in template
+
+
+def _apply_mapped_pseudo_column(
+    values: list,
+    mapped_rule: RuleDef,
+    mapped_strategy: str,
+    regexes: list[tuple[RuleDef, re.Pattern]],
+    name_rule: RuleDef | None,
+    pepper: str,
+    person_list: set[str] | None,
+    cell_regexes: list[tuple[RuleDef, re.Pattern]],
+    person_names: tuple[str, ...],
+    value_scan: bool,
+    ruleset: RuleSet,
+    bind_mode: str,
+    column: str,
+    checksum_policy: str | None,
+    allowlist,
+    backend,
+) -> tuple[list[str], int]:
+    """Mapped pseudo/pseudo_v2 column: match in Python, HMAC in one batch.
+
+    Cells that miss the mapped rule still go through _mask_one_cell.
+    `changed` matches _apply_single_count (compare against apply_src).
+    """
+    scheme = "v2" if mapped_strategy == "pseudo_v2" else "v1"
+    norm_fn = NORMALIZERS.get(mapped_rule.normalize, normalize_default)
+    need_hmac = _template_needs_hmac(mapped_rule.pseudo)
+
+    out: list[str] = [""] * len(values)
+    changed = 0
+    batch_idx: list[int] = []
+    norms: list[str] = []
+    apply_srcs: list[str] = []
+
+    for i, v in enumerate(values):
+        raw = "" if v is None else str(v)
+        if not raw.strip() or raw.strip().startswith("="):
+            out[i] = raw
+            continue
+        force = bind_mode == "force" and bool(raw.strip())
+        if not (force or _value_matches_rule(mapped_rule, raw)):
+            cell = _mask_one_cell(
+                raw,
+                mapped_rule,
+                mapped_strategy,
+                regexes,
+                name_rule,
+                pepper,
+                person_list,
+                cell_regexes,
+                person_names,
+                value_scan,
+                ruleset=ruleset,
+                bind_mode=bind_mode,
+                column=column,
+                checksum_policy=checksum_policy,
+                allowlist=allowlist,
+            )
+            out[i] = cell["masked_value"]
+            changed += int(cell["changed"])
+            continue
+        if _allowlisted(mapped_rule.name, raw, allowlist):
+            out[i] = raw
+            continue
+        apply_src = _canonical_for_rule(mapped_rule, raw)
+        if (
+            bind_mode != "force"
+            and checksum_policy != "legacy"
+            and _hold_checksum_review(
+                mapped_rule,
+                raw,
+                apply_src,
+                column=column,
+                checksum_policy=checksum_policy,
+            )
+        ):
+            out[i] = raw
+            continue
+        batch_idx.append(i)
+        apply_srcs.append(apply_src)
+        norms.append(norm_fn(apply_src))
+
+    hmac_hexes: list[str | None]
+    if batch_idx and need_hmac:
+        hmac_hexes = backend.hash_batch(
+            norms, pepper, scheme, [mapped_rule.name], 64, "1"
+        )
+    else:
+        hmac_hexes = [None] * len(norms)
+
+    for j, i in enumerate(batch_idx):
+        masked = render_template(
+            mapped_rule.pseudo,
+            norms[j],
+            pepper,
+            scheme=scheme,
+            entity_type=mapped_rule.name,
+            hmac_hex=hmac_hexes[j],
+        )
+        out[i] = masked
+        if masked != apply_srcs[j]:
+            changed += 1
+
+    return out, changed
+
+
 def apply_rules(
     df: pl.DataFrame,
     ruleset: RuleSet,
@@ -708,6 +826,7 @@ def apply_rules(
 
     checksum_policy = current_checksum_policy()
     allowlist = current_allowlist()
+    pseudo_backend = None
     for col_name in out.columns:
         spec = spec_by_col.get(col_name)
         if spec is None and not value_scan:
@@ -715,8 +834,56 @@ def apply_rules(
         mapped_rule = ruleset.defs.get(spec.rule) if spec is not None else None
         mapped_strategy = spec.strategy if spec is not None else "mask"
         bind_mode = spec.bind_mode if spec is not None else "validate"
-        col = pl.col(col_name).cast(pl.Utf8)
+        if (
+            mapped_rule is not None
+            and mapped_strategy in {"pseudo", "pseudo_v2"}
+            and pepper is not None
+        ):
+            orig_vals = out[col_name].cast(pl.Utf8).to_list()
+            if pseudo_backend is None:
+                from maskit.native import get_backend
+
+                pseudo_backend = get_backend()
+            masked_vals, n_changed = _apply_mapped_pseudo_column(
+                orig_vals,
+                mapped_rule,
+                mapped_strategy,
+                regexes,
+                name_rule,
+                pepper,
+                person_list,
+                cell_regexes,
+                person_names,
+                value_scan,
+                ruleset,
+                bind_mode,
+                col_name,
+                checksum_policy,
+                allowlist,
+                pseudo_backend,
+            )
+            out = out.with_columns(pl.Series(col_name, masked_vals, dtype=pl.Utf8))
+            total_masked += n_changed
+            if checksum_policy != "legacy":
+                from maskit.detection.policy import checksum_should_review
+                from maskit.detection.runctx import current_run
+
+                stats = current_run()
+                for orig, new in zip(orig_vals, masked_vals):
+                    if orig is None or str(orig) != str(new):
+                        continue
+                    if checksum_should_review(mapped_rule.name, str(orig), checksum_policy):
+                        stats.add_review(
+                            entity_type=mapped_rule.name,
+                            value=str(orig),
+                            column=col_name,
+                            reason="checksum invalid",
+                            validation_status="INVALID",
+                            recognizer="checksum",
+                        )
+            continue
         orig_vals = out[col_name].to_list() if checksum_policy != "legacy" else None
+        col = pl.col(col_name).cast(pl.Utf8)
         result = col.map_elements(
             lambda v, mr=mapped_rule, ms=mapped_strategy, bm=bind_mode, cn=col_name, pol=checksum_policy, al=allowlist: _mask_one_cell(
                 v if v is not None else "",

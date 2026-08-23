@@ -26,7 +26,27 @@ jobs:
       - name: Lint (ruff)
         run: ruff check maskit/ tests/
       - name: Test (pytest)
-        run: pytest tests/ -q
+        run: pytest tests/ --native-mode=python -q
+
+  native-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install native build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ libssl-dev python3-dev
+      - name: Install Python deps
+        run: pip install -e ".[dev]" pybind11
+      - name: Build native core
+        run: bash scripts/build_native.sh
+      - name: Differential tests
+        run: pytest tests/test_native_parity.py --native-mode=compare -q
+      - name: Kernel smoke
+        run: python scripts/bench_native_kernel.py
 
   # 每个 push 自动构建 Windows exe，供用户直接下载（无需自己打包）
   build-exe:

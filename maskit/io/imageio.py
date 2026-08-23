@@ -18,8 +18,12 @@ import os
 import sys
 from pathlib import Path
 
+from maskit.detection.pipeline import detect_text
+from maskit.detection.policy import partition_hits
+from maskit.detection.scope import ChecksumPolicy
 from maskit.rules.defs import RuleSet
-from maskit.text import _strip_anchors
+
+OCR_AUTO_MIN = 0.85
 
 # 语言包：首次图片脱敏时自动下载（tessdata_fast 官方仓库，~28MB 三件套）
 _TESSDATA_DIR = Path.home() / ".maskit" / "tessdata"
@@ -76,23 +80,46 @@ def _load_tesseract():
     return pytesseract
 
 
-def _sensitive_regexes(ruleset: RuleSet) -> list:
-    """返回可用于图片文字识别的敏感正则（text_scanable 规则，去锚点）。"""
-    import re
-
-    compiled = []
-    for d in ruleset.defs.values():
-        if d.text_scanable and not d.default_disabled:
-            compiled.append(re.compile(_strip_anchors(d.match)))
-    return compiled
-
-
-def _is_sensitive(text: str, regexes: list) -> bool:
-    """判断 OCR 文本是否命中敏感正则。"""
-    t = (text or "").strip()
-    if not t:
-        return False
-    return any(r.search(t) for r in regexes)
+def _ocr_sensitive_boxes(data: dict, ruleset: RuleSet) -> list[tuple[int, int, int, int]]:
+    """Map unified detect_text hits back to OCR bounding boxes. No YAML wide regex."""
+    n = len(data["text"])
+    pieces: list[str] = []
+    token_spans: list[tuple[int, int, int]] = []  # start, end, index
+    pos = 0
+    for i in range(n):
+        word = (data["text"][i] or "").strip()
+        if not word:
+            continue
+        if pieces:
+            pieces.append(" ")
+            pos += 1
+        start = pos
+        pieces.append(word)
+        pos += len(word)
+        token_spans.append((start, pos, i))
+    blob = "".join(pieces)
+    if not blob.strip():
+        return []
+    hits = detect_text(blob, ruleset=ruleset)
+    auto = partition_hits(hits, checksum_policy=ChecksumPolicy.REVIEW.value)["AUTO_APPLY"]
+    boxes = []
+    for h in auto:
+        if h.confidence < OCR_AUTO_MIN:
+            continue
+        if h.validation_status == "INVALID":
+            continue
+        a, b = h.span(len(blob))
+        for ts, te, idx in token_spans:
+            if ts < b and a < te:
+                x, y, w, hgt = (
+                    data["left"][idx],
+                    data["top"][idx],
+                    data["width"][idx],
+                    data["height"][idx],
+                )
+                if w > 0 and hgt > 0:
+                    boxes.append((x, y, x + w, y + hgt))
+    return boxes
 
 
 def mask_image_file(
@@ -133,22 +160,7 @@ def mask_image_file(
             f"OCR 失败（确认已安装 tesseract 及中文语言包）: {src} ({exc})"
         ) from exc
 
-    regexes = _sensitive_regexes(ruleset)
-    # 合并敏感词的边界框（同行的合并，避免零碎区域）
-    boxes = []
-    n = len(data["text"])
-    for i in range(n):
-        text = (data["text"][i] or "").strip()
-        conf = int(data.get("conf", [0])[i] if i < len(data.get("conf", [])) else 0)
-        if not text or conf < 60:  # 低置信度跳过
-            continue
-        if _is_sensitive(text, regexes):
-            x, y, w, h = (
-                data["left"][i], data["top"][i],
-                data["width"][i], data["height"][i],
-            )
-            if w > 0 and h > 0:
-                boxes.append((x, y, x + w, y + h))
+    boxes = _ocr_sensitive_boxes(data, ruleset)
 
     if not boxes:
         # 无敏感信息 → 原样复制

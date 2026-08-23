@@ -68,7 +68,8 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "{prefix}-***",
         "pseudo": "{prefix}-{hash:8}",
         "normalize": "upper",
-        "text_scanable": True,
+        "text_scanable": False,
+        "prefixes": ["EID", "EMP", "STAFF"],
         "keywords": ["工号", "员工编号", "员工id", "员工号", "employee_id", "编号", "工牌"],
         "description": "员工工号/编号，遮盖为保留前缀隐藏编号",
     },
@@ -98,7 +99,7 @@ BUILTIN_RULE_DEFS: dict[str, dict[str, Any]] = {
         "mask": "v{major}.*.*",
         "pseudo": "V-{hash:8}",
         "normalize": "lower",
-        "text_scanable": True,
+        "text_scanable": False,
         "keywords": ["版本", "version", "软件版本", "app_version"],
         "description": "软件版本号，遮盖为保留主版本",
     },
@@ -188,6 +189,8 @@ class RuleDef:
     text_scanable: bool = False  # 是否可用于文本流 PII 扫描
     keywords: list[str] = field(default_factory=list)  # 列名自动匹配语义关键词
     description: str = ""  # 通俗描述（GUI 展示，面向非开发人员）
+    prefixes: list[str] = field(default_factory=list)  # employee_id 等受控前缀
+    scan_mode: str = ""  # free | contextual | column；空则按类型默认
 
     @property
     def regex(self) -> re.Pattern:
@@ -202,12 +205,14 @@ class RuleSpec:
     rule: str
     strategy: str  # "mask" | "pseudo"
     optional: bool = False  # True → 列不存在时静默跳过（默认规则集用）；False → 硬错误
+    bind_mode: str = "validate"  # validate | force
+    origin: str = "explicit"  # explicit | inferred
 
     def validate(self, available: set[str]) -> None:
         """校验策略合法、规则存在。"""
-        if self.strategy not in ("mask", "pseudo"):
+        if self.strategy not in ("mask", "pseudo", "pseudo_v2"):
             raise ValueError(
-                f"列 {self.column!r} 的策略 {self.strategy!r} 非法（应为 mask 或 pseudo）"
+                f"列 {self.column!r} 的策略 {self.strategy!r} 非法（应为 mask / pseudo / pseudo_v2）"
             )
         if self.rule not in available:
             raise ValueError(f"列 {self.column!r} 引用了不存在的规则 {self.rule!r}")

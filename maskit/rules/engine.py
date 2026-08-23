@@ -15,16 +15,47 @@ import re
 
 import polars as pl
 
+from maskit.detection.canonical import canonical_for_rule as _canonical_for_rule
+from maskit.detection.canonical import should_skip_catchall_value as _should_skip_catchall_value_raw
+from maskit.detection.canonical import to_halfwidth as _to_halfwidth
+from maskit.detection.canonical import value_matches_rule as _value_matches_rule_raw
+from maskit.detection.patterns import CELL_IP_RE
+from maskit.detection.patterns import DASHED_BANK_RE as _DASHED_BANK_RE
+from maskit.detection.patterns import EMAIL_BODY_RE as _EMAIL_BODY_RE
+from maskit.detection.patterns import SPACED_ID_RE as _SPACED_ID_RE
+from maskit.detection.patterns import VALUE_SCAN_RULES as _VALUE_SCAN_RULES
+from maskit.detection.patterns import strip_anchors as _strip_match_anchors
 from maskit.normalize import normalize_default
 from maskit.rules.defs import NORMALIZERS, RuleDef, RuleSet, RuleSpec
+from maskit.rules.name_company import COMMON_NON_NAMES as _COMMON_NON_NAMES
+from maskit.rules.name_company import is_person_name as _is_person_name
 
 
-def _strip_anchors(pattern: str) -> str:
-    """去掉 ^ 和 $ 锚点，使规则正则可在值内匹配。"""
-    p = pattern
-    p = p.removeprefix("^")
-    p = p.removesuffix("$")
-    return p
+def _hold_checksum_review(
+    rule: RuleDef,
+    original: str,
+    apply_src: str,
+    *,
+    column: str | None = None,
+    checksum_policy: str | None = None,
+) -> bool:
+    """INVALID checksum under review/strict → do not write."""
+    from maskit.detection.policy import checksum_should_review
+
+    if checksum_policy == "legacy":
+        return False
+    return checksum_should_review(rule.name, apply_src, checksum_policy)
+
+
+def _allowlisted(rule_name: str, value: str, allowlist=None) -> bool:
+    from maskit.detection.policy import current_allowlist
+
+    al = allowlist if allowlist is not None else current_allowlist()
+    if al is None or not getattr(al, "entries", None):
+        return False
+    from maskit.detection.review import fingerprint
+
+    return al.allows(rule_name, value, fingerprint=fingerprint(value))
 
 
 def _domain_key(pepper: str, domain: str) -> bytes:
@@ -44,6 +75,30 @@ def audit_key(pepper: str) -> bytes:
     return _domain_key(pepper, "audit")
 
 
+NORMALIZER_VERSION = "1"
+
+def pseudo_key_v2(pepper: str, entity_type: str) -> bytes:
+    """v2: HMAC(pepper, maskit:pseudonym:v2) then HMAC(root, entity_type)."""
+    root = hmac.new(
+        pepper.encode("utf-8"), b"maskit:pseudonym:v2", hashlib.sha256
+    ).digest()
+    return hmac.new(root, entity_type.encode("utf-8"), hashlib.sha256).digest()
+
+
+def pseudo_hash_v2(
+    value: str,
+    pepper: str,
+    entity_type: str,
+    *,
+    length: int = 24,
+    normalizer_version: str = NORMALIZER_VERSION,
+) -> str:
+    """96-bit hex default. Domain-separated by entity type + normalizer version."""
+    key = pseudo_key_v2(pepper, entity_type)
+    msg = f"v2|{normalizer_version}|{value}".encode()
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()[:length].upper()
+
+
 def hmac_digest(value: str, key: bytes, length: int = 8) -> str:
     """确定性 HMAC 哈希，输出 hex 前缀。"""
     digest = hmac.new(key, value.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -55,7 +110,14 @@ def pseudo_hash(value: str, pepper: str, length: int = 8) -> str:
     return hmac_digest(value, pseudo_key(pepper), length)
 
 
-def render_template(template: str, value: str, pepper: str | None) -> str:
+def render_template(
+    template: str,
+    value: str,
+    pepper: str | None,
+    *,
+    scheme: str = "v1",
+    entity_type: str = "",
+) -> str:
     """渲染遮盖/伪名模板。
 
     支持的占位符：
@@ -73,7 +135,11 @@ def render_template(template: str, value: str, pepper: str | None) -> str:
     if "{hash:8}" in template:
         if pepper is None:
             raise ValueError("pseudo 策略需要 --pepper（或 MASKIT_PEPPER）才能生成确定性伪名")
-        template = template.replace("{hash:8}", pseudo_hash(value, pepper, 8))
+        if scheme == "v2":
+            digest = pseudo_hash_v2(value, pepper, entity_type or "unknown", length=24)
+        else:
+            digest = pseudo_hash(value, pepper, 8)
+        template = template.replace("{hash:8}", digest)
 
     if "{first}" in template:
         template = template.replace("{first}", value[:1] if value else "")
@@ -117,7 +183,10 @@ def render_template(template: str, value: str, pepper: str | None) -> str:
             raise ValueError("pseudo 策略需要 --pepper")
         n = len(re.sub(r"\D", "", value))
         n = n or 11
-        h = pseudo_hash(value, pepper, 16)
+        if scheme == "v2":
+            h = pseudo_hash_v2(value, pepper, entity_type or "unknown", length=max(16, n))
+        else:
+            h = pseudo_hash(value, pepper, 16)
         # 由哈希派生 n 位数字（确定性）
         digits = "".join(str(int(c, 16) % 10) for c in h)[:n].ljust(n, "0")
         template = template.replace("{digits}", digits)
@@ -149,6 +218,17 @@ def _pseudo_single(rule: RuleDef, value: str, pepper: str) -> str:
     norm_fn = NORMALIZERS.get(rule.normalize, normalize_default)
     norm_value = norm_fn(value)
     return render_template(rule.pseudo, norm_value, pepper)
+
+
+def _pseudo_single_v2(rule: RuleDef, value: str, pepper: str) -> str:
+    """Opt-in v2 pseudonym: 96-bit, entity-type domain separation. Does not change v1."""
+    if not value:
+        return value
+    norm_fn = NORMALIZERS.get(rule.normalize, normalize_default)
+    norm_value = norm_fn(value)
+    return render_template(
+        rule.pseudo, norm_value, pepper, scheme="v2", entity_type=rule.name
+    )
 
 
 def _apply_single(rule: RuleDef, value: str, strategy: str, pepper: str | None) -> str:
@@ -190,97 +270,25 @@ def _apply_single_count(
                 "pseudo 策略激活但未提供 --pepper（或 MASKIT_PEPPER），拒绝静默执行"
             )
         out = _pseudo_single(rule, value, pepper)
+    elif strategy == "pseudo_v2":
+        if pepper is None:
+            raise ValueError(
+                "pseudo_v2 策略激活但未提供 --pepper（或 MASKIT_PEPPER），拒绝静默执行"
+            )
+        out = _pseudo_single_v2(rule, value, pepper)
     else:
         raise ValueError(f"非法策略: {strategy}")
     return {"masked_value": out, "changed": 1 if out != value else 0}
 
 
-# 值级检测白名单：只对这些「强特征」规则做整值检测。
-# 弱特征规则（app_version/account/employee_id/phone）误伤率高
-# （会匹配 2.5/2024.1.1 等日期小数），排除。
-_VALUE_SCAN_RULES = {"email", "ip", "id_card", "bank_card"}
-
-# 格内 IP：禁止紧贴 v/字母数字/点（避免 v10.20.30.40），八位 0-255
-_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)"
-CELL_IP_RE = re.compile(
-    rf"(?<![vV0-9A-Za-z.]){_OCTET}(?:\.{_OCTET}){{3}}(?![0-9A-Za-z])(?!\.\d)"
-)
-_DATE_LIKE_VERSION_RE = re.compile(r"^(19|20)\d{2}[./-]\d{1,2}([./-]\d{1,2})?$")
-_DEPT_LIKE_RE = re.compile(r"^[\u4e00-\u9fff]{1,8}(部|处|科|组|室)$")
-_SPACED_ID_RE = re.compile(r"\d{6}\s+\d{8}\s+\d{3}[\dXx]")
-_DASHED_BANK_RE = re.compile(r"\d{4}[\s\-]\d{4}[\s\-]\d{4}[\s\-]\d{4}(?:[\s\-]\d{1,3})?")
-_EMAIL_BODY_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_CATCHALL_BODIES = {".+", ".*", ".+?", ".*?"}
-
-# 中文人名检测（排除词表 + 姓氏开头）：
-# 值级检测对「排除词表外 + 姓氏开头 + 2-4字纯中文」判定为人名，按 name 规则脱敏。
-# 覆盖横排选手/教练收入表里的人名（无列名可依）。
-_COMMON_SURNAMES = set(
-    "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹"
-    "喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪"
-    "汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹"
-    "狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童"
-    "颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁"
-    "宣贲邓郁单杭洪包诸左石崔吉钮龚党刘姬欧司"
-)
-
-# 常见复姓：优先匹配（2 字姓），覆盖欧阳/司马/上官/诸葛/夏侯/东方/皇甫/尉迟/公孙/慕容等
-_COMMON_COMPOUND_SURNAMES = (
-    "欧阳", "司马", "上官", "诸葛", "夏侯", "东方", "皇甫", "尉迟",
-    "公孙", "慕容", "司徒", "司空", "西门", "南宫", "端木", "轩辕",
-    "令狐", "独孤", "宇文", "长孙", "呼延", "闻人",
-)
-
-# 排除词表：常见 2-4 字普通中文词（不是人名），避免误伤
-_COMMON_NON_NAMES = {
-    "一队", "万元", "主体", "俱乐部", "债务类别", "入职时间", "关联关系", "其他",
-    "其他费用", "分析师", "原币单位", "变更类型", "合计", "后期", "品牌主管",
-    "品牌策划", "商务总监", "商务经理", "备注", "奖金分成", "姓名", "实习生",
-    "平面设计", "应付账款", "总人数", "序号", "岗位", "应发", "实发", "扣款",
-    "社保", "公积金", "个税", "实付", "应收", "应付", "账款", "工资", "薪酬",
-    "金额", "费用", "类型", "说明", "名称", "单位", "时期", "期间", "摘要",
-    "项目", "科目", "凭证", "日期", "时间", "人员", "部门", "职务", "级别",
-    "总计", "小计", "大写", "人民币", "银行", "账号", "账户", "审核",
-    "制表", "复核", "批准", "录入", "提交", "状态", "进度", "类别", "来源",
-}
-
-
-def _to_halfwidth(s: str) -> str:
-    """全角 ASCII（FF01-FF5E）按位映射为半角，下标 1:1。"""
-    chars = []
-    for c in s:
-        o = ord(c)
-        if 0xFF01 <= o <= 0xFF5E:
-            chars.append(chr(o - 0xFEE0))
-        elif c == "\u3000":
-            chars.append(" ")
-        else:
-            chars.append(c)
-    return "".join(chars)
-
-
-def _is_catchall_rule(rule: RuleDef) -> bool:
-    body = rule.match.removeprefix("^").removesuffix("$")
-    return body in _CATCHALL_BODIES
-
-
 def _should_skip_catchall_value(value: str) -> bool:
     """部门/科室或排除词 → 不套 name/company 的 .+ 模板。"""
-    s = value.strip()
-    if s in _COMMON_NON_NAMES:
-        return True
-    return _DEPT_LIKE_RE.fullmatch(s) is not None
+    return _should_skip_catchall_value_raw(value, _COMMON_NON_NAMES)
 
 
-def _canonical_for_rule(rule: RuleDef, raw: str) -> str:
-    """列映射/整格检测用的规范化值（空格证号、横线卡号、全角邮箱）。"""
-    if rule.name == "id_card":
-        return re.sub(r"\s+", "", raw)
-    if rule.name == "bank_card":
-        return re.sub(r"[\s\-]", "", raw)
-    if rule.name == "email":
-        return _to_halfwidth(raw)
-    return raw.strip()
+def _value_matches_rule(rule: RuleDef, value: str) -> bool:
+    """值是否整体命中规则正则（列映射套模板前的校验）。"""
+    return _value_matches_rule_raw(rule, value, _COMMON_NON_NAMES)
 
 
 def iter_pii_variant_hits(
@@ -325,19 +333,6 @@ def apply_pii_variants(
     for original, replacement in iter_pii_variant_hits(text, rules_by_name, strategy, pepper):
         out = out.replace(original, replacement)
     return out
-
-
-def _is_person_name(value: str) -> bool:
-    """判断值是否为中文人名（排除词表外 + 单/复姓开头 + 2-4字纯中文）。"""
-    v = value.strip()
-    if not re.fullmatch(r"[一-鿿]{2,4}", v):
-        return False
-    if v in _COMMON_NON_NAMES:
-        return False
-    # 复姓优先（欧阳修 → 欧阳在复姓表）
-    if len(v) >= 2 and v[:2] in _COMMON_COMPOUND_SURNAMES:
-        return True
-    return v[0] in _COMMON_SURNAMES
 
 
 def _build_value_scan_regexes(ruleset: RuleSet) -> list[tuple[RuleDef, re.Pattern]]:
@@ -398,6 +393,9 @@ def _value_scan_single(
     pepper: str | None,
     name_rule: RuleDef | None = None,
     person_list: set[str] | None = None,
+    column: str | None = None,
+    checksum_policy: str | None = None,
+    allowlist=None,
 ) -> dict:
     """值级检测：值**整体**命中某敏感正则 → 用该规则脱敏。
 
@@ -409,29 +407,19 @@ def _value_scan_single(
     best = _scan_match_rule(value, regexes, name_rule, person_list)
     if best is None:
         return {"masked_value": value, "changed": 0}
-    out = _apply_single(best, _canonical_for_rule(best, v.strip()), strategy, pepper)
+    apply_src = _canonical_for_rule(best, v.strip())
+    if _allowlisted(best.name, v, allowlist):
+        return {"masked_value": value, "changed": 0}
+    if (
+        checksum_policy != "legacy"
+        and _hold_checksum_review(
+            best, v, apply_src, column=column, checksum_policy=checksum_policy
+        )
+    ):
+        return {"masked_value": value, "changed": 0, "review": 1}
+        return {"masked_value": value, "changed": 0}
+    out = _apply_single(best, apply_src, strategy, pepper)
     return {"masked_value": out, "changed": 1 if out != v.strip() else 0}
-
-
-def _strip_match_anchors(pattern: str) -> str:
-    """去掉 ^ / $，供格内扫描用。"""
-    return pattern.removeprefix("^").removesuffix("$")
-
-
-def _value_matches_rule(rule: RuleDef, value: str) -> bool:
-    """值是否整体命中规则正则（列映射套模板前的校验）。"""
-    s = value.strip()
-    if not s:
-        return False
-    if _is_catchall_rule(rule) and _should_skip_catchall_value(s):
-        return False
-    if rule.name == "app_version" and _DATE_LIKE_VERSION_RE.fullmatch(s):
-        return False
-    cand = _canonical_for_rule(rule, s)
-    try:
-        return re.fullmatch(rule.match, cand) is not None
-    except re.error:
-        return False
 
 
 def _build_cell_scan_regexes(ruleset: RuleSet) -> list[tuple[RuleDef, re.Pattern]]:
@@ -458,6 +446,8 @@ def _mask_cell_inner(
     pepper: str | None,
     strategy: str,
     person_names: tuple[str, ...],
+    column: str | None = None,
+    checksum_policy: str | None = None,
 ) -> str:
     """扫描单元格内部的强特征 PII，可选按人员清单做边界替换。
 
@@ -468,7 +458,15 @@ def _mask_cell_inner(
     out = value
     for rule, regex in cell_regexes:
         def _repl(m: re.Match, r=rule) -> str:
-            return _apply_single(r, m.group(0), strategy, pepper)
+            src = m.group(0)
+            if r.name in {"id_card", "bank_card"}:
+                apply_src = _canonical_for_rule(r, src)
+                if checksum_policy != "legacy" and _hold_checksum_review(
+                    r, src, apply_src, column=column, checksum_policy=checksum_policy
+                ):
+                    return src
+                return _apply_single(r, apply_src, strategy, pepper)
+            return _apply_single(r, src, strategy, pepper)
 
         out = regex.sub(_repl, out)
     by_name = {r.name: r for r, _ in cell_regexes}
@@ -482,6 +480,49 @@ def _mask_cell_inner(
     return out
 
 
+def _apply_src(hit) -> str:
+    """Mask/pseudo 输入：证件/卡号/全角邮箱用规范化值，其余用原文（与历史行为一致）。"""
+    if hit.original_value != hit.normalized_value and hit.entity_type in {
+        "id_card",
+        "bank_card",
+        "email",
+    }:
+        return hit.normalized_value
+    return hit.original_value
+
+
+def _apply_detections(
+    raw: str,
+    hits: list,
+    strategy: str,
+    pepper: str | None,
+    ruleset: RuleSet,
+) -> dict:
+    """把 DetectionResult 列表变成脱敏字符串（不改检测逻辑）。"""
+    if not hits:
+        return {"masked_value": raw, "changed": 0}
+    whole = [h for h in hits if h.start is None]
+    if whole:
+        h = whole[0]
+        rule = ruleset.defs.get(h.entity_type)
+        if rule is None:
+            return {"masked_value": raw, "changed": 0}
+        return _apply_single_count(rule, _apply_src(h), strategy, pepper)
+    ordered = sorted(hits, key=lambda h: len(h.original_value), reverse=True)
+    out = raw
+    seen: set[str] = set()
+    for h in ordered:
+        if h.original_value in seen:
+            continue
+        seen.add(h.original_value)
+        rule = ruleset.defs.get(h.entity_type)
+        if rule is None:
+            continue
+        repl = _apply_single(rule, _apply_src(h), strategy, pepper)
+        out = out.replace(h.original_value, repl)
+    return {"masked_value": out, "changed": 1 if out != raw else 0}
+
+
 def _mask_one_cell(
     value: str | None,
     mapped_rule: RuleDef | None,
@@ -493,8 +534,16 @@ def _mask_one_cell(
     cell_regexes: list[tuple[RuleDef, re.Pattern]],
     person_names: tuple[str, ...],
     value_scan: bool,
+    ruleset: RuleSet | None = None,
+    bind_mode: str = "validate",
+    column: str | None = None,
+    checksum_policy: str | None = None,
+    allowlist=None,
 ) -> dict:
-    """单单元格：列映射（先校验）→ 整格值级检测 → 格内扫描。"""
+    """单单元格：列映射（先校验）→ 整格值级检测 → 格内扫描。
+
+    bind_mode=force 时跳过格式校验（仅用户显式 FORCE，列名推断不得进入）。
+    """
     raw = value if value is not None else ""
     if not str(raw).strip():
         return {"masked_value": raw, "changed": 0}
@@ -504,19 +553,35 @@ def _mask_one_cell(
 
     fallback_strategy = mapped_strategy if mapped_rule is not None else "mask"
 
-    if mapped_rule is not None and _value_matches_rule(mapped_rule, s):
-        apply_src = _canonical_for_rule(mapped_rule, s)
-        return _apply_single_count(mapped_rule, apply_src, mapped_strategy, pepper)
+    if mapped_rule is not None:
+        force = bind_mode == "force" and bool(s.strip())
+        if force or _value_matches_rule(mapped_rule, s):
+            if _allowlisted(mapped_rule.name, s, allowlist):
+                return {"masked_value": s, "changed": 0}
+            apply_src = _canonical_for_rule(mapped_rule, s)
+            if (
+                bind_mode != "force"
+                and checksum_policy != "legacy"
+                and _hold_checksum_review(
+                    mapped_rule, s, apply_src, column=column, checksum_policy=checksum_policy
+                )
+            ):
+                return {"masked_value": s, "changed": 0}
+            return _apply_single_count(mapped_rule, apply_src, mapped_strategy, pepper)
 
     if not value_scan:
         return {"masked_value": s, "changed": 0}
 
-    vs = _value_scan_single(s, regexes, fallback_strategy, pepper, name_rule, person_list)
-    if vs["changed"]:
-        return vs
+    vs = _value_scan_single(
+        s, regexes, fallback_strategy, pepper, name_rule, person_list,
+        column=column, checksum_policy=checksum_policy, allowlist=allowlist,
+    )
+    if vs["changed"] or vs.get("review"):
+        return {"masked_value": vs["masked_value"], "changed": vs["changed"]}
 
     inner = _mask_cell_inner(
-        s, cell_regexes, name_rule, pepper, fallback_strategy, person_names
+        s, cell_regexes, name_rule, pepper, fallback_strategy, person_names,
+        column=column, checksum_policy=checksum_policy,
     )
     return {"masked_value": inner, "changed": 1 if inner != s else 0}
 
@@ -534,21 +599,10 @@ def preview_dataframe(
     - rule 为命中规则名（列映射规则，或值级检测命中的规则）；无命中为 None
     - 判定逻辑与 apply_rules 一致（含值级检测补漏），保证预览=实际脱敏
     """
-    from maskit.rules.matcher import auto_match_columns
+    from maskit.detection.plan import compile_column_plan, mapped_rule_for
 
     cols = df.columns
-    # 列映射（与 _mask_dataframe 一致：缺列跳过 optional，否则报错）
-    effective_specs = []
-    for spec in ruleset.specs:
-        if spec.column not in cols:
-            if spec.optional:
-                continue
-            raise ValueError(f"规则引用了不存在的列: {spec.column!r}")
-        effective_specs.append(spec)
-    if not effective_specs and all(s.optional for s in ruleset.specs):
-        effective_specs = auto_match_columns(cols)
-    spec_by_col = {s.column: s for s in effective_specs}
-
+    plan = compile_column_plan(list(cols), ruleset)
     regexes = _build_value_scan_regexes(ruleset)
     cell_regexes = _build_cell_scan_regexes(ruleset)
     name_rule = ruleset.defs.get("name")
@@ -561,16 +615,17 @@ def preview_dataframe(
         rule_label: str | None = None
         strategy_label: str | None = None
         sample_before = sample_after = None
-        spec = spec_by_col.get(col)
-        mapped_rule = None
-        mapped_strategy = "mask"
-        if spec is not None:
-            mapped_rule = ruleset.defs.get(spec.rule)
-            if mapped_rule is None:
-                raise ValueError(f"规则 {spec.rule!r} 未定义")
-            mapped_strategy = spec.strategy
-            rule_label = spec.rule
-            strategy_label = spec.strategy
+        binding = plan.binding_for(col)
+        mapped_rule = mapped_rule_for(plan, ruleset, col)
+        mapped_strategy = binding.strategy if binding else "mask"
+        bind_mode = binding.bind_mode if binding else "validate"
+        if binding is not None:
+            rule_label = binding.rule
+            strategy_label = binding.strategy
+        from maskit.detection.policy import checksum_should_review, current_checksum_policy
+
+        checksum_policy = current_checksum_policy()
+        col_review = 0
         for v in values:
             if v is None:
                 continue
@@ -578,6 +633,8 @@ def preview_dataframe(
             out = _mask_one_cell(
                 v, mapped_rule, mapped_strategy, regexes, name_rule, pepper,
                 person_list, cell_regexes, person_names, value_scan=True,
+                ruleset=ruleset, bind_mode=bind_mode, column=col,
+                checksum_policy=checksum_policy,
             )
             if out["changed"]:
                 hits += 1
@@ -588,6 +645,15 @@ def preview_dataframe(
                     hit = _scan_match_rule(v, regexes, name_rule, person_list)
                     rule_label = hit.name if hit else "in_cell"
                     strategy_label = "mask"
+            elif mapped_rule is not None and checksum_should_review(
+                mapped_rule.name, str(v), checksum_policy
+            ):
+                col_review += 1
+            elif mapped_rule is None:
+                for rn in ("id_card", "bank_card"):
+                    if checksum_should_review(rn, str(v), checksum_policy):
+                        col_review += 1
+                        break
         results.append({
             "column": col,
             "rule": rule_label,
@@ -597,6 +663,9 @@ def preview_dataframe(
             "ratio": round(hits / total, 3) if total else 0.0,
             "sample_before": sample_before,
             "sample_after": sample_after,
+            "auto_apply": hits,
+            "review": col_review,
+            "reject": 0,
         })
     return results
 
@@ -635,18 +704,26 @@ def apply_rules(
     name_rule = ruleset.defs.get("name")
     person_names = tuple(sorted(person_list, key=len, reverse=True)) if person_list else ()
 
+    from maskit.detection.policy import current_allowlist, current_checksum_policy
+
+    checksum_policy = current_checksum_policy()
+    allowlist = current_allowlist()
     for col_name in out.columns:
         spec = spec_by_col.get(col_name)
         if spec is None and not value_scan:
             continue
         mapped_rule = ruleset.defs.get(spec.rule) if spec is not None else None
         mapped_strategy = spec.strategy if spec is not None else "mask"
+        bind_mode = spec.bind_mode if spec is not None else "validate"
         col = pl.col(col_name).cast(pl.Utf8)
+        orig_vals = out[col_name].to_list() if checksum_policy != "legacy" else None
         result = col.map_elements(
-            lambda v, mr=mapped_rule, ms=mapped_strategy: _mask_one_cell(
+            lambda v, mr=mapped_rule, ms=mapped_strategy, bm=bind_mode, cn=col_name, pol=checksum_policy, al=allowlist: _mask_one_cell(
                 v if v is not None else "",
                 mr, ms, regexes, name_rule, pepper,
                 person_list, cell_regexes, person_names, value_scan,
+                ruleset=ruleset, bind_mode=bm, column=cn, checksum_policy=pol,
+                allowlist=al,
             ),
             return_dtype=pl.Struct({"masked_value": pl.Utf8, "changed": pl.Int8}),
         ).alias("__cell_result")
@@ -656,7 +733,30 @@ def apply_rules(
         )
         total_masked += int(out["__changed"].sum())
         out = out.drop("__changed")
+        if checksum_policy != "legacy" and orig_vals is not None:
+            from maskit.detection.policy import checksum_should_review
+            from maskit.detection.runctx import current_run
 
+            stats = current_run()
+            for orig, new in zip(orig_vals, out[col_name].to_list()):
+                if orig is None or str(orig) != str(new):
+                    continue
+                names = [mapped_rule.name] if mapped_rule is not None else ["id_card", "bank_card"]
+                for rn in names:
+                    if checksum_should_review(rn, str(orig), checksum_policy):
+                        stats.add_review(
+                            entity_type=rn,
+                            value=str(orig),
+                            column=col_name,
+                            reason="checksum invalid",
+                            validation_status="INVALID",
+                            recognizer="checksum",
+                        )
+                        break
+
+    from maskit.detection.runctx import current_run
+
+    current_run().auto_apply += total_masked
     return out, total_masked
 
 

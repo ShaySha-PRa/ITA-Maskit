@@ -12,6 +12,8 @@ import yaml
 
 from maskit.rules.defs import BUILTIN_RULE_DEFS, RuleDef, RuleSet, RuleSpec
 
+_SPEC_FIELDS = {f.name for f in RuleSpec.__dataclass_fields__.values()}
+
 # 默认列映射（无 --rules 时使用的内置规则集，全部 mask 策略）
 DEFAULT_MAPPING: list[dict[str, str]] = [
     {"column": "name", "rule": "name", "strategy": "mask"},
@@ -41,6 +43,8 @@ def _build_rule_def(name: str, raw: dict[str, Any]) -> RuleDef:
         text_scanable=bool(raw.get("text_scanable", False)),
         keywords=list(raw.get("keywords", [])),
         description=raw.get("description", ""),
+        prefixes=list(raw.get("prefixes") or []),
+        scan_mode=str(raw.get("scan_mode") or ""),
     )
 
 
@@ -58,10 +62,12 @@ def _build_ruleset_from_data(data: dict, *, optional_specs: bool = False) -> Rul
     # ② rules：列映射
     specs = []
     for m in (data.get("rules") or []):
+        row = dict(m)
         if optional_specs:
-            m = dict(m)
-            m.setdefault("optional", True)
-        specs.append(RuleSpec(**m))
+            row.setdefault("optional", True)
+        if row.pop("force", False):
+            row["bind_mode"] = "force"
+        specs.append(RuleSpec(**{k: v for k, v in row.items() if k in _SPEC_FIELDS}))
 
     ruleset = RuleSet(defs=defs, specs=specs)
     for spec in specs:

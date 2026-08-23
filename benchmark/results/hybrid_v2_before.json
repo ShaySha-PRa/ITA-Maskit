@@ -1,0 +1,40 @@
+{
+  "recorded_at": "2026-08-21T19:10:00+08:00",
+  "worktree": "/home/joshua/projects/ITA-maskit-wt-hybrid-detection",
+  "branch": "feature/hybrid-detection-v2",
+  "main_head": "272509d",
+  "pytest": {
+    "result": "passed",
+    "notes": "1 skip (LLM no key), 1 xfail (three-char name cut 司马光华)"
+  },
+  "ruff": {
+    "errors": 15,
+    "note": "pre-existing gui/preview/tests issues; not introduced this branch as a clean gate"
+  },
+  "gold": {
+    "n_cases": 33,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 24,
+    "fp": 0,
+    "fn": 0
+  },
+  "stress": {
+    "n_cases": 1716,
+    "precision": 0.861,
+    "recall": 0.966,
+    "f1": 0.910,
+    "tp": 1827,
+    "fp": 295,
+    "fn": 64,
+    "failed_cases": 299
+  },
+  "perf_10k_csv_seconds": {
+    "runs": [0.7372, 0.7202, 0.7212, 0.7372, 0.7260],
+    "min": 0.7202,
+    "median": 0.7260,
+    "max": 0.7372
+  },
+  "maxrss_kb_linux": 112776
+}

@@ -29,6 +29,7 @@ def mask_file(
     image_crop: bool = False,
     details: dict | None = None,
     pdf_redact: bool = False,
+    checksum_policy: str = "legacy",
 ) -> int:
     """统一脱敏入口：按扩展名分发，返回处理行数/页数/段数。
 
@@ -38,6 +39,9 @@ def mask_file(
     PDF：默认提取重排；pdf_redact=True 时用 PyMuPDF 原样遮罩（beta）。
     details（可选）：传 dict 时记录格式相关的处理详情（如 Excel 各 sheet 信息）。
     """
+    from maskit.detection.policy import set_checksum_policy
+
+    set_checksum_policy(checksum_policy)
     ext = _ext(input_path)
 
     if ext == ".csv":

@@ -1,6 +1,7 @@
 #include "maskit/core/dictionary.hpp"
 
 #include "maskit/core/errors.hpp"
+#include "maskit/core/threads.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -314,11 +315,19 @@ std::vector<PersonSpan> CompiledDictionary::match(std::string_view text_utf8) co
 std::vector<std::vector<PersonSpan>> CompiledDictionary::match_batch(
     const std::vector<std::string>& texts
 ) const {
-    std::vector<std::vector<PersonSpan>> out;
-    out.reserve(texts.size());
-    for (const auto& text : texts) {
-        out.push_back(match(text));
+    std::vector<std::vector<PersonSpan>> out(texts.size());
+    int threads = effective_threads(texts.size());
+#ifdef MASKIT_USE_OPENMP
+#pragma omp parallel for schedule(static) num_threads(threads)
+    for (int i = 0; i < static_cast<int>(texts.size()); ++i) {
+        out[static_cast<std::size_t>(i)] = match(texts[static_cast<std::size_t>(i)]);
     }
+#else
+    (void)threads;
+    for (std::size_t i = 0; i < texts.size(); ++i) {
+        out[i] = match(texts[i]);
+    }
+#endif
     return out;
 }
 

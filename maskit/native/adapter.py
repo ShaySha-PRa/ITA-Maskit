@@ -65,6 +65,58 @@ class NativeBackend:
             for row in compiled.match_batch(texts)
         ]
 
+    def to_halfwidth(self, text: str) -> str:
+        return self._ext.to_halfwidth(text)
+
+    def nfkc_half(self, text: str) -> str:
+        return self._ext.nfkc_half(text)
+
+    def canonical_phone(self, text: str) -> str:
+        return self._ext.canonical_phone(text)
+
+    def id_card_checksum_ok(self, value: str) -> bool:
+        return bool(self._ext.id_card_checksum_ok(value))
+
+    def luhn_ok(self, digits: str) -> bool:
+        return bool(self._ext.luhn_ok(digits))
+
+    def is_date_like(self, value: str) -> bool:
+        return bool(self._ext.is_date_like(value))
+
+    def is_phone_value(self, value: str, *, column_mode: bool = False) -> bool:
+        return bool(self._ext.is_phone_value(value, column_mode))
+
+    def is_app_version_value(self, value: str, *, column_mode: bool = False) -> bool:
+        return bool(self._ext.is_app_version_value(value, column_mode))
+
+    def looks_like_employee_id(
+        self, value: str, prefixes, *, column_mode: bool = False
+    ) -> bool:
+        return bool(self._ext.looks_like_employee_id(value, list(prefixes), column_mode))
+
+    def classify_phone(self, value: str, *, column_mode: bool = False):
+        return self._ext.classify_phone(value, column_mode)
+
+    def merge_hits(self, hits: list[dict], text_len: int = 0) -> dict:
+        return self._ext.merge_hits(hits, text_len)
+
+    def detect_column_batch(
+        self, values: list[str], entity_type: str, prefixes=None
+    ) -> list:
+        return self._ext.detect_column_batch(values, entity_type, list(prefixes or ()))
+
+    def detect_text_batch(
+        self,
+        texts: list[str],
+        prefixes=None,
+        person_names=None,
+        scan_names: bool = False,
+    ) -> list:
+        compiled = self._compiled(person_names) if (scan_names and person_names) else None
+        return self._ext.detect_text_batch(
+            texts, list(prefixes or ()), compiled, bool(scan_names and compiled)
+        )
+
     def metadata(self) -> dict:
         return {
             "backend": self.name,
@@ -74,4 +126,5 @@ class NativeBackend:
             "pseudonym_scheme_versions": list(self._ext.pseudonym_scheme_versions()),
             "build_compiler": self._ext.build_compiler(),
             "build_type": self._ext.build_type(),
+            "native_threads": int(self._ext.native_threads()),
         }

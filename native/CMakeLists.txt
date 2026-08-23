@@ -7,12 +7,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(MASKIT_BUILD_PYTHON "Build pybind11 extension" ON)
 option(MASKIT_BUILD_TESTS "Build C++ unit tests" ON)
+option(MASKIT_ENABLE_OPENMP "Optional OpenMP on large native batches" ON)
 
 add_library(maskit_core STATIC
     src/crypto.cpp
     src/pseudonym.cpp
     src/dictionary.cpp
     src/version.cpp
+    src/threads.cpp
+    src/normalize.cpp
+    src/validate.cpp
+    src/resolve.cpp
+    src/detect.cpp
 )
 target_include_directories(maskit_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -28,6 +34,14 @@ else()
     find_package(OpenSSL REQUIRED)
     target_link_libraries(maskit_core PRIVATE OpenSSL::Crypto)
     target_compile_definitions(maskit_core PRIVATE MASKIT_USE_OPENSSL=1)
+endif()
+
+if(MASKIT_ENABLE_OPENMP)
+    find_package(OpenMP)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(maskit_core PUBLIC OpenMP::OpenMP_CXX)
+        target_compile_definitions(maskit_core PUBLIC MASKIT_USE_OPENMP=1)
+    endif()
 endif()
 
 if(MASKIT_BUILD_PYTHON)
@@ -81,4 +95,8 @@ if(MASKIT_BUILD_TESTS)
     add_executable(maskit_dict_tests tests/test_dictionary.cpp)
     target_link_libraries(maskit_dict_tests PRIVATE maskit_core)
     add_test(NAME maskit_dict_tests COMMAND maskit_dict_tests)
+
+    add_executable(maskit_validate_tests tests/test_validate.cpp)
+    target_link_libraries(maskit_validate_tests PRIVATE maskit_core)
+    add_test(NAME maskit_validate_tests COMMAND maskit_validate_tests)
 endif()

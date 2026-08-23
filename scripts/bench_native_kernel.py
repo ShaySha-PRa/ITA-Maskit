@@ -69,8 +69,26 @@ def main() -> int:
             lambda: nt.hash_batch(converted, PEPPER, "v1", length=8), 3
         )
         out["list_retain_seconds"] = convert_s
+        import maskit._native as ext
+
+        out["n7_conversion_100k"] = _time(lambda: ext.batch_identity_size(converted), 5)
+        kernel = out["native_hmac_100k"]["median"]
+        conv = out["n7_conversion_100k"]["median"]
+        out["n7_conversion_share"] = conv / kernel if kernel else None
+        out["n7_arrow"] = (
+            "skip"
+            if (out["n7_conversion_share"] or 0) < 0.30
+            else "consider"
+        )
         out["kernel_speedup"] = (
             out["python_hmac_100k"]["median"] / out["native_hmac_100k"]["median"]
+        )
+        phones = ["13800138000", "2019.06.22", "010-12989966"] * 10_000
+        out["python_phone_30k"] = _time(
+            lambda: [py.is_phone_value(v, column_mode=True) for v in phones], 3
+        )
+        out["native_phone_30k"] = _time(
+            lambda: [nt.is_phone_value(v, column_mode=True) for v in phones], 3
         )
 
     pseudo_rs = _pseudo_ruleset()

@@ -22,7 +22,7 @@ void expect(bool cond, const char* msg) {
 int main() {
     using namespace maskit::core;
 
-    expect(native_version() == "0.1.1", "native_version");
+    expect(native_version() == "0.2.0", "native_version");
     expect(core_abi_version() == 1, "abi");
     expect(!build_compiler().empty(), "compiler");
 

@@ -1,11 +1,17 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <memory>
 #include <tuple>
 
+#include "maskit/core/detect.hpp"
 #include "maskit/core/dictionary.hpp"
 #include "maskit/core/errors.hpp"
+#include "maskit/core/normalize.hpp"
 #include "maskit/core/pseudonym.hpp"
+#include "maskit/core/resolve.hpp"
+#include "maskit/core/threads.hpp"
+#include "maskit/core/validate.hpp"
 #include "maskit/core/version.hpp"
 
 namespace py = pybind11;
@@ -31,7 +37,31 @@ void register_exceptions(const py::module_& m) {
 }  // namespace
 
 PYBIND11_MODULE(_native, m) {
-    m.doc() = "ITA-Maskit native core (HMAC batch + person-list matcher)";
+    m.doc() = "ITA-Maskit native core (HMAC, validators, resolve, batch detect)";
+
+    auto hit_to_dict = [](const maskit::core::NativeHit& h) {
+        py::dict d;
+        d["entity_type"] = h.entity_type;
+        d["original_value"] = h.original_value;
+        d["normalized_value"] = h.normalized_value;
+        d["confidence"] = h.confidence;
+        d["recognizer"] = h.recognizer;
+        d["reason"] = h.reason;
+        d["evidence"] = h.evidence;
+        d["validation_status"] = h.validation_status;
+        d["subtype"] = h.subtype;
+        if (h.start) {
+            d["start"] = *h.start;
+        } else {
+            d["start"] = py::none();
+        }
+        if (h.end) {
+            d["end"] = *h.end;
+        } else {
+            d["end"] = py::none();
+        }
+        return d;
+    };
 
     py::class_<maskit::core::CompiledDictionary, std::shared_ptr<maskit::core::CompiledDictionary>>(
         m, "CompiledDictionary"
@@ -153,5 +183,169 @@ PYBIND11_MODULE(_native, m) {
         },
         py::arg("hex"),
         py::arg("n")
+    );
+
+    m.def(
+        "batch_identity_size",
+        [](const std::vector<std::string>& values) {
+            py::gil_scoped_release release;
+            return values.size();
+        },
+        py::arg("values")
+    );
+    m.def("set_native_threads", &maskit::core::set_native_threads, py::arg("n"));
+    m.def("native_threads", &maskit::core::native_threads);
+    m.def("to_halfwidth", &maskit::core::to_halfwidth, py::arg("text"));
+    m.def("nfkc_half", &maskit::core::nfkc_half, py::arg("text"));
+    m.def("canonical_phone", &maskit::core::canonical_phone, py::arg("text"));
+    m.def("canonical_id_card", &maskit::core::canonical_id_card, py::arg("text"));
+    m.def("canonical_bank_card", &maskit::core::canonical_bank_card, py::arg("text"));
+    m.def("canonical_email", &maskit::core::canonical_email, py::arg("text"));
+    m.def("id_card_checksum_ok", &maskit::core::id_card_checksum_ok, py::arg("value"));
+    m.def("luhn_ok", &maskit::core::luhn_ok, py::arg("digits"));
+    m.def("is_date_like", &maskit::core::is_date_like, py::arg("value"));
+    m.def(
+        "is_phone_value",
+        [](const std::string& value, bool column_mode) {
+            return maskit::core::is_phone_value(value, column_mode);
+        },
+        py::arg("value"),
+        py::arg("column_mode") = false
+    );
+    m.def(
+        "is_app_version_value",
+        [](const std::string& value, bool column_mode) {
+            return maskit::core::is_app_version_value(value, column_mode);
+        },
+        py::arg("value"),
+        py::arg("column_mode") = false
+    );
+    m.def(
+        "looks_like_employee_id",
+        [](const std::string& value, const std::vector<std::string>& prefixes, bool column_mode) {
+            return maskit::core::looks_like_employee_id(value, prefixes, column_mode);
+        },
+        py::arg("value"),
+        py::arg("prefixes"),
+        py::arg("column_mode") = false
+    );
+    m.def(
+        "classify_phone",
+        [](const std::string& value, bool column_mode) -> py::object {
+            auto hit = maskit::core::classify_phone(value, column_mode);
+            if (!hit) {
+                return py::none();
+            }
+            return py::make_tuple(hit->first, hit->second);
+        },
+        py::arg("value"),
+        py::arg("column_mode") = false
+    );
+    m.def(
+        "merge_hits",
+        [](const std::vector<py::dict>& rows, int text_len) {
+            std::vector<maskit::core::RankedHit> hits;
+            hits.reserve(rows.size());
+            for (std::size_t i = 0; i < rows.size(); ++i) {
+                const py::dict& d = rows[i];
+                maskit::core::RankedHit h;
+                h.entity_type = d["entity_type"].cast<std::string>();
+                h.original_value = d["original_value"].cast<std::string>();
+                h.recognizer = d.contains("recognizer") ? d["recognizer"].cast<std::string>() : "";
+                h.reason = d.contains("reason") ? d["reason"].cast<std::string>() : "";
+                h.evidence = d.contains("evidence") ? d["evidence"].cast<std::string>() : "";
+                h.validation_status =
+                    d.contains("validation_status") ? d["validation_status"].cast<std::string>()
+                                                    : "UNKNOWN";
+                h.confidence = d.contains("confidence") ? d["confidence"].cast<double>() : 0.0;
+                if (d.contains("start") && !d["start"].is_none()) {
+                    h.start = d["start"].cast<int>();
+                }
+                if (d.contains("end") && !d["end"].is_none()) {
+                    h.end = d["end"].cast<int>();
+                }
+                h.index = static_cast<int>(i);
+                hits.push_back(std::move(h));
+            }
+            maskit::core::MergeResult merged;
+            {
+                py::gil_scoped_release release;
+                merged = maskit::core::merge_hits(hits, text_len);
+            }
+            py::list kept;
+            for (int idx : merged.kept_indices) {
+                kept.append(idx);
+            }
+            py::list trace;
+            for (const auto& t : merged.trace) {
+                py::dict row;
+                row["winner_index"] = t.winner_index;
+                row["suppressed_index"] = t.suppressed_index;
+                row["reason_code"] = t.reason_code;
+                trace.append(row);
+            }
+            py::dict out;
+            out["kept"] = kept;
+            out["trace"] = trace;
+            return out;
+        },
+        py::arg("hits"),
+        py::arg("text_len") = 0
+    );
+    m.def(
+        "detect_column_batch",
+        [hit_to_dict](
+            const std::vector<std::string>& values,
+            const std::string& entity_type,
+            const std::vector<std::string>& prefixes
+        ) {
+            std::vector<std::optional<maskit::core::NativeHit>> rows;
+            {
+                py::gil_scoped_release release;
+                rows = maskit::core::detect_column_batch(values, entity_type, prefixes);
+            }
+            py::list out;
+            for (const auto& h : rows) {
+                if (h) {
+                    out.append(hit_to_dict(*h));
+                } else {
+                    out.append(py::none());
+                }
+            }
+            return out;
+        },
+        py::arg("values"),
+        py::arg("entity_type"),
+        py::arg("prefixes") = std::vector<std::string>{}
+    );
+    m.def(
+        "detect_text_batch",
+        [hit_to_dict](
+            const std::vector<std::string>& texts,
+            const std::vector<std::string>& prefixes,
+            std::shared_ptr<maskit::core::CompiledDictionary> names,
+            bool scan_names
+        ) {
+            std::vector<std::vector<maskit::core::NativeHit>> rows;
+            {
+                py::gil_scoped_release release;
+                rows = maskit::core::detect_text_batch(
+                    texts, prefixes, names.get(), scan_names
+                );
+            }
+            py::list out;
+            for (const auto& row : rows) {
+                py::list one;
+                for (const auto& h : row) {
+                    one.append(hit_to_dict(h));
+                }
+                out.append(one);
+            }
+            return out;
+        },
+        py::arg("texts"),
+        py::arg("prefixes") = std::vector<std::string>{},
+        py::arg("names") = py::none(),
+        py::arg("scan_names") = false
     );
 }

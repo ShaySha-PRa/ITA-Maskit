@@ -2,6 +2,7 @@
 
 #include "maskit/core/crypto.hpp"
 #include "maskit/core/errors.hpp"
+#include "maskit/core/threads.hpp"
 
 #include <array>
 #include <span>
@@ -114,19 +115,34 @@ std::vector<std::string> hash_batch(
     if (length <= 0 || length > 64) {
         throw NativeError("invalid digest length");
     }
-    std::vector<std::string> out;
-    out.reserve(values.size());
+    std::vector<std::string> out(values.size());
+    const int threads = effective_threads(values.size());
     if (scheme == PseudoScheme::V1) {
         auto key = hmac_sv(pepper, "pseudonym");
-        for (const auto& value : values) {
+#ifdef MASKIT_USE_OPENMP
+#pragma omp parallel for schedule(static) num_threads(threads)
+        for (int i = 0; i < static_cast<int>(values.size()); ++i) {
             auto digest = hmac_key_msg(
-                std::span<const std::uint8_t>{key.data(), key.size()}, value
+                std::span<const std::uint8_t>{key.data(), key.size()},
+                values[static_cast<std::size_t>(i)]
             );
             std::string hex = hex_upper(digest.data(), digest.size());
             hex.resize(static_cast<std::size_t>(length));
-            out.push_back(std::move(hex));
+            out[static_cast<std::size_t>(i)] = std::move(hex);
             secure_wipe(std::span<std::uint8_t>{digest.data(), digest.size()});
         }
+#else
+        (void)threads;
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            auto digest = hmac_key_msg(
+                std::span<const std::uint8_t>{key.data(), key.size()}, values[i]
+            );
+            std::string hex = hex_upper(digest.data(), digest.size());
+            hex.resize(static_cast<std::size_t>(length));
+            out[i] = std::move(hex);
+            secure_wipe(std::span<std::uint8_t>{digest.data(), digest.size()});
+        }
+#endif
         secure_wipe(std::span<std::uint8_t>{key.data(), key.size()});
         return out;
     }
@@ -142,12 +158,18 @@ std::vector<std::string> hash_batch(
         have_shared = true;
         secure_wipe(std::span<std::uint8_t>{root.data(), root.size()});
     }
-    for (std::size_t i = 0; i < values.size(); ++i) {
+#ifdef MASKIT_USE_OPENMP
+#pragma omp parallel for schedule(static) num_threads(threads)
+    for (int i = 0; i < static_cast<int>(values.size()); ++i) {
+        const std::size_t idx = static_cast<std::size_t>(i);
+#else
+    for (std::size_t idx = 0; idx < values.size(); ++idx) {
+#endif
         std::array<std::uint8_t, kSha256Len> key{};
         if (have_shared) {
             key = shared_key;
         } else {
-            std::string_view entity = entity_types[i];
+            std::string_view entity = entity_types[idx];
             auto root = hmac_sv(pepper, "maskit:pseudonym:v2");
             key = hmac_key_msg(
                 std::span<const std::uint8_t>{root.data(), root.size()}, entity
@@ -158,11 +180,11 @@ std::vector<std::string> hash_batch(
         msg.append("v2|");
         msg.append(normalizer_version);
         msg.push_back('|');
-        msg.append(values[i]);
+        msg.append(values[idx]);
         auto digest = hmac_key_msg(std::span<const std::uint8_t>{key.data(), key.size()}, msg);
         std::string hex = hex_upper(digest.data(), digest.size());
         hex.resize(static_cast<std::size_t>(length));
-        out.push_back(std::move(hex));
+        out[idx] = std::move(hex);
         if (!have_shared) {
             secure_wipe(std::span<std::uint8_t>{key.data(), key.size()});
         }

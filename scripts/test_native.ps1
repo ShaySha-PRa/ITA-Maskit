@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) { throw "python fallback failed" }
 
 Write-Host "=== compare parity ==="
 $env:MASKIT_NATIVE = "compare"
-Invoke-Py -m pytest tests/test_native_parity.py tests/test_native_dictionary.py tests/test_hmac_v2.py tests/test_native_column_pseudo.py -q
+Invoke-Py -m pytest tests/test_native_parity.py tests/test_native_dictionary.py tests/test_hmac_v2.py tests/test_native_column_pseudo.py tests/test_native_validators.py tests/test_native_resolve_detect.py -q
 if ($LASTEXITCODE -ne 0) { throw "native parity pytest failed" }
 
 Remove-Item Env:MASKIT_NATIVE -ErrorAction SilentlyContinue

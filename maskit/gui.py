@@ -51,7 +51,8 @@ class MaskWorker(QThread):
     def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
                  ruleset_name: str | None = None, output_dir: str | None = None,
                  person_list: set[str] | None = None, image_crop: bool = False,
-                 pdf_redact: bool = False):
+                 pdf_redact: bool = False, checksum_policy: str = "legacy",
+                 review_out: str | None = None):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
@@ -62,49 +63,82 @@ class MaskWorker(QThread):
         self.person_list = person_list
         self.image_crop = image_crop
         self.pdf_redact = pdf_redact
+        self.checksum_policy = checksum_policy or "legacy"
+        self.review_out = review_out
         self.total_stats = MaskStats()
 
     def run(self):
+        from maskit.detection.allowlist import Allowlist, default_allowlist_path
+        from maskit.detection.policy import set_allowlist, set_checksum_policy
+        from maskit.detection.review import UnresolvedReviewError, write_review_manifest
+        from maskit.detection.runctx import begin_run
         from maskit.io import default_output_path, mask_file
         from maskit.rules.user_rules import get_current_ruleset, load_ruleset
 
         # 加载选中的规则集（主界面下拉）；缺省用当前规则集
         name = self.ruleset_name or get_current_ruleset()
         ruleset = load_ruleset(name)
+        set_checksum_policy(self.checksum_policy)
+        al_path = default_allowlist_path()
+        if al_path.exists():
+            set_allowlist(Allowlist.load(al_path))
+        all_reviews: list[dict] = []
         total = len(self.files)
-        for i, f in enumerate(self.files):
-            src = Path(f)
-            out = default_output_path(f, self.output_dir)
-            try:
-                details = {}
-                mask_file(
-                    str(src), str(out), ruleset, self.pepper,
-                    strategy=self.strategy, scan_names=self.scan_names,
-                    person_list=self.person_list,
-                    image_crop=self.image_crop,
-                    pdf_redact=self.pdf_redact,
-                    details=details,
-                )
-                self.total_stats.files += 1
-                # 累加处理/脱敏数据（各格式从 details 提供）
-                self.total_stats.add(
-                    processed=details.get("processed", 0),
-                    masked=details.get("masked", 0),
-                )
-                self.stats.emit(self.total_stats.processed, self.total_stats.masked)
-                # Excel 多 sheet：显示各 sheet 处理信息
-                info = src.name
-                sheets = details.get("sheets")
-                if sheets:
-                    masked_sheets = [s for s in sheets if s["masked_cells"] > 0]
-                    info += f" ({len(sheets)} sheets"
-                    if masked_sheets:
-                        info += f", {len(masked_sheets)} sheets含脱敏"
-                    info += ")"
-                self.finished_file.emit(i, info, "成功", str(out))
-            except Exception as exc:  # noqa: BLE001 — GUI 层捕获所有异常显示在结果列表
-                self.finished_file.emit(i, src.name, f"失败: {exc}", "")
-            self.progress.emit(i + 1, total, 100 if i == total - 1 else int((i + 1) / total * 100))
+        try:
+            for i, f in enumerate(self.files):
+                src = Path(f)
+                out = default_output_path(f, self.output_dir)
+                try:
+                    details = {}
+                    stats = begin_run()
+                    mask_file(
+                        str(src), str(out), ruleset, self.pepper,
+                        strategy=self.strategy, scan_names=self.scan_names,
+                        person_list=self.person_list,
+                        image_crop=self.image_crop,
+                        pdf_redact=self.pdf_redact,
+                        details=details,
+                        checksum_policy=self.checksum_policy,
+                    )
+                    for row in stats.review_rows:
+                        row["file"] = row.get("file") or str(src)
+                        row["format"] = row.get("format") or src.suffix.lstrip(".").lower()
+                    all_reviews.extend(stats.review_rows)
+                    if self.checksum_policy == "strict" and stats.review:
+                        dest = Path(out)
+                        if dest.exists():
+                            dest.unlink()
+                        raise UnresolvedReviewError(
+                            f"strict：仍有 {stats.review} 条待复核，已阻止写出最终文件"
+                        )
+                    self.total_stats.files += 1
+                    # 累加处理/脱敏数据（各格式从 details 提供）
+                    self.total_stats.add(
+                        processed=details.get("processed", 0),
+                        masked=details.get("masked", 0),
+                    )
+                    self.stats.emit(self.total_stats.processed, self.total_stats.masked)
+                    # Excel 多 sheet：显示各 sheet 处理信息
+                    info = src.name
+                    sheets = details.get("sheets")
+                    if sheets:
+                        masked_sheets = [s for s in sheets if s["masked_cells"] > 0]
+                        info += f" ({len(sheets)} sheets"
+                        if masked_sheets:
+                            info += f", {len(masked_sheets)} sheets含脱敏"
+                        info += ")"
+                    status = "成功"
+                    if stats.review:
+                        status = f"成功（{stats.review} 待复核）"
+                    self.finished_file.emit(i, info, status, str(out))
+                except Exception as exc:  # noqa: BLE001 — GUI 层捕获所有异常显示在结果列表
+                    self.finished_file.emit(i, src.name, f"失败: {exc}", "")
+                self.progress.emit(i + 1, total, 100 if i == total - 1 else int((i + 1) / total * 100))
+            if self.review_out:
+                write_review_manifest(self.review_out, all_reviews)
+        finally:
+            set_checksum_policy("legacy")
+            set_allowlist(None)
         self.all_done.emit()
 
 
@@ -152,6 +186,7 @@ class MainWindow(QMainWindow):
         self.files: list[str] = []
         self.worker = None
         self.person_list: set[str] | None = None
+        self._last_review_out: str | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -238,6 +273,22 @@ class MainWindow(QMainWindow):
         options_row.addWidget(self.pdf_redact_cb)
         options_row.addWidget(self.pepper_input, 1)
         layout.addLayout(options_row)
+
+        policy_row = QHBoxLayout()
+        policy_row.addWidget(QLabel("证件校验:"))
+        self.policy_combo = QComboBox()
+        self.policy_combo.addItem("兼容（无效号仍遮盖）", "legacy")
+        self.policy_combo.addItem("复核（无效号不自动改写）", "review")
+        self.policy_combo.addItem("严格（有复核则不写最终文件）", "strict")
+        self.policy_combo.setToolTip(
+            "身份证/银行卡校验失败时的写盘策略。默认兼容旧行为。"
+        )
+        policy_row.addWidget(self.policy_combo, 1)
+        self.review_btn = QPushButton("复核清单")
+        self.review_btn.setToolTip("打开 fingerprint 复核清单，可加入白名单（不展示原文）")
+        self.review_btn.clicked.connect(self._open_review)
+        policy_row.addWidget(self.review_btn)
+        layout.addLayout(policy_row)
 
         # 规则集选择
         rs_row = QHBoxLayout()
@@ -458,12 +509,23 @@ class MainWindow(QMainWindow):
         for r in range(self.file_table.rowCount()):
             self.file_table.item(r, 1).setText("待处理")
 
+        policy = "legacy"
+        if hasattr(self, "policy_combo"):
+            policy = self.policy_combo.currentData() or "legacy"
+        review_out = None
+        if policy != "legacy" and self.files:
+            first = Path(self.files[0])
+            dest_dir = Path(output_dir) if output_dir else first.parent
+            review_out = str(dest_dir / "maskit_review.jsonl")
+            self._last_review_out = review_out
         self.worker = MaskWorker(
             self.files, self.scan_names_cb.isChecked(), strategy, pepper,
             ruleset_name=ruleset_name, output_dir=output_dir,
             person_list=self.person_list,
             image_crop=self.image_cb.isChecked(),
             pdf_redact=self.pdf_redact_cb.isChecked(),
+            checksum_policy=policy,
+            review_out=review_out,
         )
         self.worker.progress.connect(self._on_progress)
         self.worker.stats.connect(self._on_stats)
@@ -473,7 +535,6 @@ class MainWindow(QMainWindow):
 
     def _preview(self):
         """规则集预验证：预览哪些列会被脱敏、命中多少（不产出文件）。"""
-        from maskit.preview import preview_ruleset_file
         from maskit.rules.user_rules import get_current_ruleset, load_ruleset
 
         if not self.files:
@@ -576,10 +637,23 @@ class MainWindow(QMainWindow):
             import subprocess
             subprocess.Popen(["xdg-open", str(p if p.exists() else p.parent)])
 
+    def _open_review(self):
+        from maskit.gui_review import ReviewWorkbenchDialog
+
+        dlg = ReviewWorkbenchDialog(self)
+        last = getattr(self, "_last_review_out", None)
+        if last and Path(last).exists():
+            dlg.load_path(last)
+        dlg.exec_()
+
     def _on_all_done(self):
         self.start_btn.setEnabled(True)
         self.open_btn.setEnabled(True)
-        QMessageBox.information(self, "完成", "所有文件脱敏完成。")
+        last = getattr(self, "_last_review_out", None)
+        extra = ""
+        if last and Path(last).exists() and Path(last).stat().st_size:
+            extra = f"\n复核清单: {last}"
+        QMessageBox.information(self, "完成", "所有文件脱敏完成。" + extra)
 
     def _open_output_dir(self):
         # 打开第一个有输出路径的目录

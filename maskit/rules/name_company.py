@@ -41,6 +41,43 @@ BUILTIN_COMPANIES = {
     "阿里巴巴", "腾讯", "华为", "字节跳动", "工商银行", "中国移动",
 }
 
+_COMMON_SURNAMES = set(
+    "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹"
+    "喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪"
+    "汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹"
+    "狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童"
+    "颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁"
+    "宣贲邓郁单杭洪包诸左石崔吉钮龚党刘姬欧司"
+)
+_COMMON_COMPOUND_SURNAMES = (
+    "欧阳", "司马", "上官", "诸葛", "夏侯", "东方", "皇甫", "尉迟",
+    "公孙", "慕容", "司徒", "司空", "西门", "南宫", "端木", "轩辕",
+    "令狐", "独孤", "宇文", "长孙", "呼延", "闻人",
+)
+COMMON_NON_NAMES = {
+    "一队", "万元", "主体", "俱乐部", "债务类别", "入职时间", "关联关系", "其他",
+    "其他费用", "分析师", "原币单位", "变更类型", "合计", "后期", "品牌主管",
+    "品牌策划", "商务总监", "商务经理", "备注", "奖金分成", "姓名", "实习生",
+    "平面设计", "应付账款", "总人数", "序号", "岗位", "应发", "实发", "扣款",
+    "社保", "公积金", "个税", "实付", "应收", "应付", "账款", "工资", "薪酬",
+    "金额", "费用", "类型", "说明", "名称", "单位", "时期", "期间", "摘要",
+    "项目", "科目", "凭证", "日期", "时间", "人员", "部门", "职务", "级别",
+    "总计", "小计", "大写", "人民币", "银行", "账号", "账户", "审核",
+    "制表", "复核", "批准", "录入", "提交", "状态", "进度", "类别", "来源",
+}
+
+
+def is_person_name(value: str) -> bool:
+    """排除词表外 + 单/复姓开头 + 2-4字纯中文。"""
+    v = value.strip()
+    if not re.fullmatch(r"[一-鿿]{2,4}", v):
+        return False
+    if v in COMMON_NON_NAMES:
+        return False
+    if len(v) >= 2 and v[:2] in _COMMON_COMPOUND_SURNAMES:
+        return True
+    return v[0] in _COMMON_SURNAMES
+
 
 def load_person_list(path: str | Path) -> set[str]:
     """从本地 CSV 加载全量人员清单（动态词表，数据全程本地）。
@@ -86,9 +123,30 @@ _PROSE_PARTICLES = (
 )
 
 
+_SENTENCE_CONT = (
+    "不", "没", "也", "还", "就", "都", "很", "会", "能", "要", "把", "被",
+    "从", "向", "对", "和", "与", "及", "等", "的", "在", "于", "已",
+)
+_ACTION_SUFFIXES = (
+    "负责", "复核", "审批", "经办", "提交", "确认", "签字", "录入", "申请",
+    "离职", "入职", "完毕", "出示", "作证", "到场",
+)
+_ROLE_PREFIXES = (
+    "经办人", "经办", "申请人", "审批人", "复核人", "员工", "用户",
+    "姓名", "操作人", "创建人", "联系人", "负责人",
+)
+
+
+def _is_cjk(ch: str) -> bool:
+    return bool(re.match(r"[一-鿿]", ch))
+
+
 def _is_longer_name_trap(name: str, rest: str, name_set: set[str]) -> bool:
-    """2 字清单名后跟 1 个汉字、拼起来像更长姓名且不在清单 → 视为误伤（张伟达）。"""
-    if len(name) != 2 or not rest:
+    """清单短名后面仍是中文、且不是动作/虚词边界 → 拒绝截断更长姓名。
+
+    适用于 2–4 字及复姓，不只二字。动作后缀（复核/负责…）视为合法边界。
+    """
+    if not rest or not name:
         return False
     if any(rest.startswith(other) for other in name_set):
         return False
@@ -96,11 +154,31 @@ def _is_longer_name_trap(name: str, rest: str, name_set: set[str]) -> bool:
         return False
     if any(rest.startswith(s) for s in _PROSE_PARTICLES):
         return False
-    extra = rest[0]
-    if not re.match(r"[一-鿿]", extra):
+    if any(rest.startswith(s) for s in _ACTION_SUFFIXES):
         return False
-    combined = name + extra
-    return combined not in name_set and re.fullmatch(r"[一-鿿]{3}", combined) is not None
+    if any(rest.startswith(s) for s in _SENTENCE_CONT):
+        return False
+    if any(rest.startswith(s) for s in _ORG_SUFFIXES):
+        return False
+    extra = rest[0]
+    if not _is_cjk(extra):
+        return False
+    i = 0
+    while i < len(rest) and _is_cjk(rest[i]):
+        tail = rest[i:]
+        if any(tail.startswith(s) for s in _ACTION_SUFFIXES + _PROSE_PARTICLES + _CONTACT_SUFFIXES + _ORG_SUFFIXES):
+            break
+        i += 1
+        if i >= 4:
+            break
+    if i == 0:
+        return False
+    combined = name + rest[:i]
+    if combined in name_set:
+        return False
+    if not re.fullmatch(r"[一-鿿]{2,8}", combined):
+        return False
+    return True
 
 
 def iter_person_list_spans(text: str, names: set[str]) -> list[tuple[int, int, str]]:

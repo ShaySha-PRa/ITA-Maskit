@@ -7,12 +7,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
     QTableWidget,
@@ -90,10 +89,12 @@ class RulesPreviewDialog(QDialog):
 
     def populate(self, results: list[dict], skipped_count: int = 0):
         """填充结果表格。results 为 per-file 预验证结果 dict。"""
-        from maskit.io import is_image_format, is_text_format
 
         total_hits = 0
         total_cells = 0
+        auto_n = 0
+        review_n = 0
+        reject_n = 0
         previewed = 0
         rows_data: list[tuple[list[str], str]] = []  # (单元格, 行类别)
 
@@ -103,6 +104,9 @@ class RulesPreviewDialog(QDialog):
                 continue
             p = Path(res["path"]).name
             previewed += 1
+            auto_n += int(res.get("auto_apply") or 0)
+            review_n += int(res.get("review") or 0)
+            reject_n += int(res.get("reject") or 0)
             for sheet in res.get("sheets", []):
                 for col in sheet.get("columns", []):
                     total_cells += col["total"]
@@ -124,7 +128,8 @@ class RulesPreviewDialog(QDialog):
         if skipped_count:
             skip_note = f" · {skipped_count} 个文本/图片格式跳过（无列可预验证）"
         self.summary.setText(
-            f"共 {previewed} 个文件预验证 · 将脱敏 {total_hits} 个单元格 / 可检测 {total_cells} 个{skip_note}"
+            f"共 {previewed} 个文件预验证 · 自动处理 {auto_n} · 待复核 {review_n} · 拒绝 {reject_n}"
+            f" · 将脱敏 {total_hits} 个单元格 / 可检测 {total_cells} 个{skip_note}"
         )
 
         self.table.setRowCount(len(rows_data))

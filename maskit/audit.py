@@ -37,6 +37,7 @@ def log_run(
     rows: int,
     mask_columns: list[str],
     pseudo_columns: list[str],
+    extra: dict | None = None,
 ) -> None:
     """写一条审计日志。pepper 为空则不记录指纹（全 mask 运行）。"""
     path = audit_log_path()
@@ -51,7 +52,10 @@ def log_run(
         "mask_columns": mask_columns,
         "pseudo_columns": pseudo_columns,
         "pepper_fingerprint": pepper_fingerprint(pepper) if pepper else None,
+        "normalizer_version": "nfkc-1",
     }
+    if extra:
+        entry.update(extra)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 

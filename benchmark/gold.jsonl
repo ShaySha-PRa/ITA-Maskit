@@ -1,0 +1,36 @@
+# ITA-Maskit detection gold set (hand-labeled, synthetic).
+# Each line: path, text, optional column/mapped_rule/person_list/scan_names, entities[].
+# entities[].value is the surface form we expect to detect.
+{"id": "s-email", "path": "structured", "text": "alice@corp.example", "entities": [{"type": "email", "value": "alice@corp.example"}]}
+{"id": "s-ip", "path": "structured", "text": "10.1.2.3", "entities": [{"type": "ip", "value": "10.1.2.3"}]}
+{"id": "s-id-invalid-fixture", "path": "structured", "text": "110101199003077777", "entities": [{"type": "id_card", "value": "110101199003077777"}]}
+{"id": "s-id-checksum-ok", "path": "structured", "text": "110101199003077774", "entities": [{"type": "id_card", "value": "110101199003077774"}]}
+{"id": "s-bank", "path": "structured", "text": "6222021234567890", "entities": [{"type": "bank_card", "value": "6222021234567890"}]}
+{"id": "s-name-heuristic", "path": "structured", "text": "张伟", "entities": [{"type": "name", "value": "张伟"}]}
+{"id": "s-name-list", "path": "structured", "text": "李娜", "person_list": ["李娜"], "entities": [{"type": "name", "value": "李娜"}]}
+{"id": "s-name-out-of-list", "path": "structured", "text": "赵磊", "person_list": ["李娜"], "entities": []}
+{"id": "s-neg-date", "path": "structured", "text": "2024.1.1", "entities": []}
+{"id": "s-neg-decimal", "path": "structured", "text": "2.5", "entities": []}
+{"id": "s-neg-formula", "path": "structured", "text": "=SUM(H13:H17)", "entities": []}
+{"id": "s-neg-dept", "path": "structured", "text": "财务部", "mapped_rule": "company", "entities": []}
+{"id": "s-neg-version-ip", "path": "structured", "text": "v10.20.30.40", "entities": []}
+{"id": "s-neg-prose", "path": "structured", "text": "张伟负责审批", "entities": []}
+{"id": "s-in-email", "path": "structured", "text": "联系邮箱 alice@corp.example，请审批。", "entities": [{"type": "email", "value": "alice@corp.example"}]}
+{"id": "s-in-ip", "path": "structured", "text": "故障主机 IP 为 10.1.2.3，值班。", "entities": [{"type": "ip", "value": "10.1.2.3"}]}
+{"id": "s-in-id-spaced", "path": "structured", "text": "身份证 110101 19900307 7777", "entities": [{"type": "id_card", "value": "110101 19900307 7777"}]}
+{"id": "s-in-bank-dash", "path": "structured", "text": "卡号 6222-0212-3456-7890", "entities": [{"type": "bank_card", "value": "6222-0212-3456-7890"}]}
+{"id": "s-in-list-name", "path": "structured", "text": "故障主机值班 李娜。", "person_list": ["李娜"], "entities": [{"type": "name", "value": "李娜"}]}
+{"id": "s-col-company-ok", "path": "structured", "text": "亚玛芬体育", "mapped_rule": "company", "entities": [{"type": "company", "value": "亚玛芬体育"}]}
+{"id": "s-col-version-skip-date", "path": "structured", "text": "2024.1.1", "mapped_rule": "app_version", "entities": []}
+{"id": "s-col-version-ok", "path": "structured", "text": "v1.2.3", "mapped_rule": "app_version", "entities": [{"type": "app_version", "value": "v1.2.3"}]}
+{"id": "s-phone-no-column", "path": "structured", "text": "13800138000", "entities": [], "note": "phone is not in value-scan whitelist"}
+{"id": "d-email-phone", "path": "document", "text": "Contact alice@corp.example phone 138-0000-0000", "entities": [{"type": "email", "value": "alice@corp.example"}, {"type": "phone", "value": "138-0000-0000"}]}
+{"id": "d-ip-not-version", "path": "document", "text": "客户端 v10.20.30.40 发布，主机 10.1.2.3", "entities": [{"type": "ip", "value": "10.1.2.3"}]}
+{"id": "d-fullwidth-email", "path": "document", "text": "邮箱：ａｌｉｃｅ＠ｃｏｒｐ．ｅｘａｍｐｌｅ", "entities": [{"type": "email", "value": "ａｌｉｃｅ＠ｃｏｒｐ．ｅｘａｍｐｌｅ"}]}
+{"id": "d-spaced-id", "path": "document", "text": "身份证 110101 19900307 7777 已归档", "entities": [{"type": "id_card", "value": "110101 19900307 7777"}]}
+{"id": "d-name-prefix", "path": "document", "text": "申请人：欧阳修 已提交", "scan_names": true, "entities": [{"type": "name", "value": "欧阳修"}]}
+{"id": "d-name-no-scan", "path": "document", "text": "申请人：欧阳修 已提交", "scan_names": false, "entities": []}
+{"id": "d-neg-date", "path": "document", "text": "截止日期 2026.08.21 请准时。", "entities": []}
+{"id": "d-mixed", "path": "document", "text": "Alice Chen 的邮箱是 alice.chen@corp.example", "scan_names": true, "person_list": ["Alice Chen"], "entities": [{"type": "name", "value": "Alice Chen"}, {"type": "email", "value": "alice.chen@corp.example"}]}
+{"id": "d-phone-spaces", "path": "document", "text": "手机 138 0013 8000", "entities": [{"type": "phone", "value": "138 0013 8000"}]}
+{"id": "d-phone-fullwidth", "path": "document", "text": "电话１３８００１３８０００", "entities": [{"type": "phone", "value": "１３８００１３８０００"}], "note": "Python \\d matches fullwidth digits"}

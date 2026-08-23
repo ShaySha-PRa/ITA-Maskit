@@ -44,6 +44,9 @@ def preview_ruleset_file(
         "sheets": sheets,
         "total_hits": sum(s["total_hits"] for s in sheets),
         "total_cells": sum(s["total_cells"] for s in sheets),
+        "auto_apply": sum(s.get("auto_apply", s["total_hits"]) for s in sheets),
+        "review": sum(s.get("review", 0) for s in sheets),
+        "reject": sum(s.get("reject", 0) for s in sheets),
     }
 
 
@@ -54,7 +57,8 @@ def _preview_df(df, ruleset, pepper, person_list, sample_rows: int) -> dict:
     from maskit.rules.engine import preview_dataframe
 
     if df.height == 0:
-        return {"rows": 0, "columns": [], "total_hits": 0, "total_cells": 0}
+        return {"rows": 0, "columns": [], "total_hits": 0, "total_cells": 0,
+                "auto_apply": 0, "review": 0, "reject": 0}
     sample = df.head(sample_rows)
     columns = preview_dataframe(sample, ruleset, pepper, person_list)
     return {
@@ -62,6 +66,9 @@ def _preview_df(df, ruleset, pepper, person_list, sample_rows: int) -> dict:
         "columns": columns,
         "total_hits": sum(c["hits"] for c in columns),
         "total_cells": sum(c["total"] for c in columns),
+        "auto_apply": sum(c.get("auto_apply", c["hits"]) for c in columns),
+        "review": sum(c.get("review", 0) for c in columns),
+        "reject": sum(c.get("reject", 0) for c in columns),
     }
 
 
@@ -102,6 +109,7 @@ def _preview_excel(src, ruleset, pepper, person_list, sample_rows: int) -> list[
     except ImportError:
         raise ValueError("需要安装 openpyxl 才能预验证 Excel")
     import polars as pl
+
     from maskit.io.excelio import cell_to_str, unique_headers
 
     wb = load_workbook(src, data_only=True)

@@ -69,6 +69,14 @@ def mask(
         "--pdf-redact",
         help="PDF 原样遮罩（beta）：PyMuPDF 黑块保留版式（AGPL）；默认关闭，走提取重排旧路径",
     ),
+    checksum_policy: str = typer.Option(
+        "legacy",
+        "--checksum-policy",
+        help="id/bank checksum：legacy 仍自动遮盖无效号；review 改送复核；strict 有未处理复核则不写最终文件",
+    ),
+    review_out: str | None = typer.Option(
+        None, "--review-out", help="将 REVIEW 项写入 JSONL（不含原文，仅 fingerprint/遮盖预览）"
+    ),
     output: str | None = typer.Option(
         None, "--output", "-o", help="输出路径（缺省为 input.masked.<ext>）"
     ),
@@ -83,9 +91,9 @@ def mask(
         is_text = is_text_format(input_path)
         # 文本格式：全文扫描，用 --strategy；表格格式：按列，规则集决定策略
         if is_text:
-            has_pseudo = strategy == "pseudo"
+            has_pseudo = strategy in {"pseudo", "pseudo_v2"}
         else:
-            has_pseudo = any(s.strategy == "pseudo" for s in ruleset.specs)
+            has_pseudo = any(s.strategy in {"pseudo", "pseudo_v2"} for s in ruleset.specs)
         if has_pseudo and not resolved_pepper:
             raise UserError(
                 "检测到 pseudo（确定性伪名化）策略但未提供 --pepper（或 MASKIT_PEPPER 环境变量）。"
@@ -109,34 +117,75 @@ def mask(
                 err=True,
             )
 
-        rows = mask_file(
-            input_path, out, ruleset, resolved_pepper,
-            encoding, strategy, scan_names, person_list, image_crop,
-            pdf_redact=pdf_redact,
-        )
+        from maskit.detection.policy import set_allowlist, set_checksum_policy
+        from maskit.detection.review import UnresolvedReviewError, write_review_manifest
+        from maskit.detection.runctx import begin_run
 
-        # 审计日志
-        if is_text:
-            mask_cols, pseudo_cols = [], [input_path] if strategy == "pseudo" else []
-        else:
-            mask_cols = [s.column for s in ruleset.specs if s.strategy == "mask"]
-            pseudo_cols = [s.column for s in ruleset.specs if s.strategy == "pseudo"]
-        log_run(
-            input_file=input_path,
-            output_file=out,
-            ruleset_version=ruleset.version,
-            pepper=resolved_pepper,
-            rows=rows,
-            mask_columns=mask_cols,
-            pseudo_columns=pseudo_cols,
-        )
+        set_checksum_policy(checksum_policy)
+        from maskit.detection.allowlist import Allowlist, default_allowlist_path
 
-        typer.echo(f"✓ 已脱敏 {rows} 项 → {out}")
-        if pseudo_cols:
-            typer.echo(f"  伪名化: {', '.join(pseudo_cols)}（确定性，跨文件可关联）")
-        if mask_cols:
-            typer.echo(f"  遮盖列: {', '.join(mask_cols)}")
-        typer.echo(f"  规则集版本: {ruleset.version}")
+        allowlist_path = default_allowlist_path()
+        if allowlist_path.exists():
+            set_allowlist(Allowlist.load(allowlist_path))
+        stats = begin_run()
+        try:
+            rows = mask_file(
+                input_path, out, ruleset, resolved_pepper,
+                encoding, strategy, scan_names, person_list, image_crop,
+                pdf_redact=pdf_redact,
+                checksum_policy=checksum_policy,
+            )
+            for row in stats.review_rows:
+                row["file"] = row.get("file") or input_path
+                row["format"] = row.get("format") or in_path.suffix.lstrip(".").lower()
+            if review_out:
+                write_review_manifest(review_out, stats.review_rows)
+            if checksum_policy == "strict" and stats.review:
+                dest = Path(out)
+                if dest.exists():
+                    dest.unlink()
+                raise UnresolvedReviewError(
+                    f"strict：仍有 {stats.review} 条待复核，已阻止写出最终文件"
+                    + (f"；复核清单: {review_out}" if review_out else "。请使用 --review-out")
+                )
+
+            # 审计日志
+            if is_text:
+                mask_cols, pseudo_cols = [], [input_path] if strategy == "pseudo" else []
+            else:
+                mask_cols = [s.column for s in ruleset.specs if s.strategy == "mask"]
+                pseudo_cols = [s.column for s in ruleset.specs if s.strategy in {"pseudo", "pseudo_v2"}]
+            log_run(
+                input_file=input_path,
+                output_file=out,
+                ruleset_version=ruleset.version,
+                pepper=resolved_pepper,
+                rows=rows,
+                mask_columns=mask_cols,
+                pseudo_columns=pseudo_cols,
+                extra={
+                    "pseudonym_scheme_version": (
+                        "v2" if (
+                            (is_text and strategy == "pseudo_v2")
+                            or (not is_text and any(s.strategy == "pseudo_v2" for s in ruleset.specs))
+                        ) else "v1"
+                    ),
+                    "checksum_policy": checksum_policy,
+                    "review_count": stats.review,
+                },
+            )
+
+            typer.echo(f"✓ 已脱敏 {rows} 项 → {out}")
+            if stats.review:
+                typer.echo(f"  待复核: {stats.review}（未自动改写）")
+            if pseudo_cols:
+                typer.echo(f"  伪名化: {', '.join(pseudo_cols)}（确定性，跨文件可关联）")
+            if mask_cols:
+                typer.echo(f"  遮盖列: {', '.join(mask_cols)}")
+            typer.echo(f"  规则集版本: {ruleset.version}")
+        finally:
+            set_checksum_policy("legacy")
+            set_allowlist(None)
     except UserError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(code=2)

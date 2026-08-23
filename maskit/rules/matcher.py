@@ -51,7 +51,15 @@ def auto_match_columns(columns: list[str]) -> list[RuleSpec]:
                 matched = rule_name
                 break
         if matched:
-            specs.append(RuleSpec(column=str(col), rule=matched, strategy="mask"))
+            specs.append(
+                RuleSpec(
+                    column=str(col),
+                    rule=matched,
+                    strategy="mask",
+                    origin="inferred",
+                    bind_mode="validate",
+                )
+            )
     return specs
 
 

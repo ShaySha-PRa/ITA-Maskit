@@ -99,7 +99,13 @@ def mask_csv_file(
 
     masked_df.write_csv(dst)
     if details is not None:
+        from maskit.detection.runctx import current_run
+
+        stats = current_run()
         details["masked"] = masked_count
         details["processed"] = masked_df.height
+        details["auto_apply"] = stats.auto_apply
+        details["review"] = stats.review
+        details["reject"] = stats.reject
     return masked_df.height
 

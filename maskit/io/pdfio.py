@@ -149,6 +149,7 @@ def mask_pdf_file(
     scan_names: bool = False,
     person_list: set[str] | None = None,
     pdf_redact: bool = False,
+    verify: bool = True,
 ) -> int:
     """脱敏 PDF → PDF，返回页数。
 
@@ -161,5 +162,22 @@ def mask_pdf_file(
         raise FileNotFoundError(f"输入文件不存在: {src}")
 
     if pdf_redact:
-        return _mask_pdf_redact(src, dst, ruleset, pepper, strategy, scan_names, person_list)
-    return _mask_pdf_rewrite(src, dst, ruleset, pepper, strategy, scan_names, person_list)
+        n = _mask_pdf_redact(src, dst, ruleset, pepper, strategy, scan_names, person_list)
+    else:
+        n = _mask_pdf_rewrite(src, dst, ruleset, pepper, strategy, scan_names, person_list)
+    if verify:
+        from maskit.detection.pipeline import detect_text
+        from maskit.io.pdf_verify import verify_pdf_no_originals
+
+        originals: list[str] = []
+        for page in _read_pdf_text(src):
+            for h in detect_text(
+                page, ruleset=ruleset, person_list=person_list, scan_names=scan_names
+            ):
+                originals.append(h.original_value)
+        from maskit.detection.runctx import current_run
+
+        current_run().pdf_verify = verify_pdf_no_originals(
+            dst, originals, fail_closed=True
+        )
+    return n

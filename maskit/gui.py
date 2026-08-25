@@ -51,8 +51,8 @@ class MaskWorker(QThread):
     def __init__(self, files: list[str], scan_names: bool, strategy: str, pepper: str | None,
                  ruleset_name: str | None = None, output_dir: str | None = None,
                  person_list: set[str] | None = None, image_crop: bool = False,
-                 pdf_redact: bool = False, checksum_policy: str = "legacy",
-                 review_out: str | None = None):
+                 pdf_redact: bool = True, checksum_policy: str = "legacy",
+                 review_out: str | None = None, pdf_ocr: bool = True):
         super().__init__()
         self.files = files
         self.scan_names = scan_names
@@ -63,6 +63,7 @@ class MaskWorker(QThread):
         self.person_list = person_list
         self.image_crop = image_crop
         self.pdf_redact = pdf_redact
+        self.pdf_ocr = pdf_ocr
         self.checksum_policy = checksum_policy or "legacy"
         self.review_out = review_out
         self.total_stats = MaskStats()
@@ -97,6 +98,7 @@ class MaskWorker(QThread):
                         person_list=self.person_list,
                         image_crop=self.image_crop,
                         pdf_redact=self.pdf_redact,
+                        pdf_ocr=self.pdf_ocr,
                         details=details,
                         checksum_policy=self.checksum_policy,
                     )
@@ -262,15 +264,24 @@ class MainWindow(QMainWindow):
         self.pseudo_cb.toggled.connect(self.pepper_input.setEnabled)
         self.image_cb = QCheckBox("图片脱敏(beta)")
         self.image_cb.setToolTip("对图片 OCR 定位敏感文字区域并裁剪掉；首次使用自动下载中文/英文语言包，需已安装 tesseract")
-        self.pdf_redact_cb = QCheckBox("PDF原样遮罩(beta)")
+        self.pdf_redact_cb = QCheckBox("PDF原页遮罩")
+        self.pdf_redact_cb.setChecked(True)
         self.pdf_redact_cb.setToolTip(
-            "用 PyMuPDF 在原 PDF 上黑块遮罩敏感文字，保留版式（AGPL 依赖）；"
-            "默认关闭，未勾选时仍走提取重排旧路径。"
+            "默认开启：有 PyMuPDF 时在原页打黑块（AGPL）。"
+            "扫描页需本机 Tesseract；未安装则该文件失败，不会假成功。"
+            "取消勾选则数字原生走提取重排；扫描页仍会失败。"
+        )
+        self.pdf_ocr_cb = QCheckBox("扫描页OCR")
+        self.pdf_ocr_cb.setChecked(True)
+        self.pdf_ocr_cb.setToolTip(
+            "扫描 PDF 用本机 Tesseract 定位后打黑块（不裁切页面）。"
+            "关闭后扫描页失败；纯文字 PDF 不受影响。"
         )
         options_row.addWidget(self.scan_names_cb)
         options_row.addWidget(self.pseudo_cb)
         options_row.addWidget(self.image_cb)
         options_row.addWidget(self.pdf_redact_cb)
+        options_row.addWidget(self.pdf_ocr_cb)
         options_row.addWidget(self.pepper_input, 1)
         layout.addLayout(options_row)
 
@@ -481,17 +492,6 @@ class MainWindow(QMainWindow):
                 "请确保已安装 tesseract OCR。",
             )
 
-        # PDF 原样遮罩（beta）提示
-        if self.pdf_redact_cb.isChecked() and any(
-            Path(f).suffix.lower() == ".pdf" for f in self.files
-        ):
-            QMessageBox.information(
-                self, "PDF原样遮罩（beta）",
-                "将在原 PDF 上用黑块遮罩敏感文字，保留版式。\n"
-                "依赖 PyMuPDF（AGPL）；未安装时会报错。\n"
-                "未勾选时仍使用提取重排的旧路径。",
-            )
-
         # 未加载人员清单：非阻断提示（姓名依赖启发式，可能漏/误伤）
         if not self.person_list:
             QMessageBox.information(
@@ -524,6 +524,7 @@ class MainWindow(QMainWindow):
             person_list=self.person_list,
             image_crop=self.image_cb.isChecked(),
             pdf_redact=self.pdf_redact_cb.isChecked(),
+            pdf_ocr=self.pdf_ocr_cb.isChecked(),
             checksum_policy=policy,
             review_out=review_out,
         )

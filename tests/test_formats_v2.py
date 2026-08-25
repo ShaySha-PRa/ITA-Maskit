@@ -321,7 +321,7 @@ def test_pdf_end_to_end(tmp_path):
     c = canvas.Canvas(str(src))
     c.drawString(100, 750, "Contact alice@corp.example phone 138-0000-0000")
     c.save()
-    mask_file(src, out, load_ruleset(), None, strategy="mask")
+    mask_file(src, out, load_ruleset(), None, strategy="mask", pdf_redact=False)
     text = PdfReader(str(out)).pages[0].extract_text()
     assert "alice@corp.example" not in text
     assert "138" in text
@@ -370,11 +370,12 @@ def test_pdf_redact_beta_end_to_end(tmp_path):
     assert "alice@corp.example" not in text
 
 
-def test_pdf_redact_missing_pymupdf(tmp_path, monkeypatch):
-    """未安装 pymupdf 时 --pdf-redact 给出清晰错误。"""
+def test_pdf_redact_missing_pymupdf_rewrites_digital(tmp_path, monkeypatch):
+    """无 PyMuPDF 时数字原生回退抽字重排，不得因缺 fitz 失败。"""
     import builtins
     import sys
 
+    from pypdf import PdfReader
     from reportlab.pdfgen import canvas
 
     from maskit.io import pdfio
@@ -395,8 +396,10 @@ def test_pdf_redact_missing_pymupdf(tmp_path, monkeypatch):
         return real_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", _fake_import)
-    with pytest.raises(ValueError, match="pymupdf"):
-        pdfio.mask_pdf_file(src, out, load_ruleset(), None, pdf_redact=True)
+    pages = pdfio.mask_pdf_file(src, out, load_ruleset(), None, pdf_redact=True)
+    assert pages == 1
+    assert out.exists()
+    assert "alice@corp.example" not in (PdfReader(str(out)).pages[0].extract_text() or "")
 
 
 # --- 统一入口分发 ---

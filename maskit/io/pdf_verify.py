@@ -153,3 +153,63 @@ def verify_pdf_no_originals(
             f"PDF 回扫失败：输出中仍可提取 {len(leaked)} 处原文，已隔离输出文件"
         )
     return report
+
+
+def verify_scan_ocr_no_originals(
+    output_path: str | Path,
+    originals: list[str],
+    scan_pages: list[int],
+    *,
+    fail_closed: bool = True,
+) -> dict:
+    """OCR output scan pages and fail-closed if originals reappear. No plaintext in errors."""
+    from maskit.io.ocr_boxes import SCAN_OCR_REQUIRED, ocr_available, ocr_plain_text
+
+    dst = Path(output_path)
+    if not scan_pages:
+        return {"status": "PASS", "leaked": 0, "fingerprints": []}
+    if not ocr_available():
+        if fail_closed and dst.exists():
+            try:
+                dst.unlink()
+            except OSError:
+                pass
+        raise ValueError(SCAN_OCR_REQUIRED)
+    try:
+        import fitz
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError(SCAN_OCR_REQUIRED) from exc
+
+    leaked: list[str] = []
+    doc = fitz.open(str(dst))
+    try:
+        for i in scan_pages:
+            if i < 0 or i >= doc.page_count:
+                continue
+            page = doc[i]
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            blob = ocr_plain_text(img)
+            for o in originals:
+                if o and o in blob:
+                    leaked.append(o)
+    finally:
+        doc.close()
+    report = {
+        "status": "FAIL" if leaked else "PASS",
+        "checked": len(originals),
+        "leaked": len(leaked),
+        "fingerprints": [_fp(o) for o in leaked],
+        "layers_checked": ["ocr_layer"],
+        "layers_unverified": [],
+    }
+    if leaked and fail_closed:
+        try:
+            dst.unlink()
+        except OSError:
+            pass
+        raise RedactionVerificationError(
+            f"PDF OCR 回扫失败：输出中仍可识别 {len(leaked)} 处原文，已隔离输出文件"
+        )
+    return report

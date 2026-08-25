@@ -28,15 +28,17 @@ def mask_file(
     person_list: set[str] | None = None,
     image_crop: bool = False,
     details: dict | None = None,
-    pdf_redact: bool = False,
+    pdf_redact: bool = True,
     checksum_policy: str = "legacy",
+    pdf_ocr: bool = True,
 ) -> int:
     """统一脱敏入口：按扩展名分发，返回处理行数/页数/段数。
 
     表格格式（CSV/Excel/JSON）：按列脱敏，strategy 由 ruleset 每列决定。
     文本格式（邮件/PDF/Word）：全文 PII 扫描，strategy 参数指定。
     图片格式（PNG/JPG，beta）：需 image_crop=True 启用 OCR 裁剪。
-    PDF：默认提取重排；pdf_redact=True 时用 PyMuPDF 原样遮罩（beta）。
+    PDF：默认原页遮罩（有 PyMuPDF 时）；pdf_redact=False 强制数字原生抽字重排。
+    扫描页需本机 Tesseract（pdf_ocr=True）；缺 OCR 则失败，纯文字 PDF 不受影响。
     details（可选）：传 dict 时记录格式相关的处理详情（如 Excel 各 sheet 信息）。
     """
     from maskit.detection.policy import set_checksum_policy
@@ -75,6 +77,7 @@ def mask_file(
         return mask_pdf_file(
             input_path, output_path, ruleset, pepper, strategy, scan_names, person_list,
             pdf_redact=pdf_redact,
+            pdf_ocr=pdf_ocr,
         )
 
     if ext == ".docx":

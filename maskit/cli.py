@@ -65,9 +65,15 @@ def mask(
         False, "--image-crop", help="图片脱敏（beta）：OCR 定位敏感文字区域并裁剪掉，需安装 tesseract"
     ),
     pdf_redact: bool = typer.Option(
-        False,
-        "--pdf-redact",
-        help="PDF 原样遮罩（beta）：PyMuPDF 黑块保留版式（AGPL）；默认关闭，走提取重排旧路径",
+        True,
+        "--pdf-redact/--no-pdf-redact",
+        help="PDF 原页遮罩（默认开，PyMuPDF/AGPL）：数字原生 span 黑块；"
+        "扫描页需本机 tesseract。--no-pdf-redact 强制抽字重排（扫描页仍失败）",
+    ),
+    pdf_ocr: bool = typer.Option(
+        True,
+        "--pdf-ocr/--no-pdf-ocr",
+        help="扫描 PDF 页是否允许 OCR；关闭时扫描页失败，纯文字 PDF 不受影响",
     ),
     checksum_policy: str = typer.Option(
         "legacy",
@@ -133,6 +139,7 @@ def mask(
                 input_path, out, ruleset, resolved_pepper,
                 encoding, strategy, scan_names, person_list, image_crop,
                 pdf_redact=pdf_redact,
+                pdf_ocr=pdf_ocr,
                 checksum_policy=checksum_policy,
             )
             for row in stats.review_rows:

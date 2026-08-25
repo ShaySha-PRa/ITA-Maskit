@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from maskit.io import imageio
+from maskit.io import ocr_boxes as ocr_boxes_mod
 
 
 @pytest.fixture
@@ -17,7 +18,7 @@ def tessdata_env(tmp_path, monkeypatch):
     """隔离语言包目录 + 清理 TESSDATA_PREFIX。"""
     d = tmp_path / "tessdata"
     d.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(imageio, "_TESSDATA_DIR", d)
+    monkeypatch.setattr(ocr_boxes_mod, "_TESSDATA_DIR", d)
     monkeypatch.delenv("TESSDATA_PREFIX", raising=False)
     return d
 

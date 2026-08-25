@@ -171,8 +171,9 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant nati
 | 要 Native 加速 | GitHub → Actions → 最新一次运行 → Artifacts **`ITA-Maskit-native-exe`**（需登录，会过期） |
 
 > **exe 注意**：
-> - 图片脱敏（beta）需安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) 二进制；**中文/英文语言包首次使用时自动下载**（约 28MB，无需手动装）
-> - PDF 原样遮罩（beta）已打入 exe；勾选后启用，默认仍走提取重排
+> - 图片脱敏（beta）与 **扫描 PDF** 需安装 [tesseract OCR](https://github.com/tesseract-ocr/tesseract) 二进制；**中文/英文语言包首次使用时自动下载**（约 28MB，无需手动装）。exe **不捆绑** tesseract。
+> - PDF 原页遮罩已打入 exe（PyMuPDF，**AGPL**），默认开启；扫描页未装 tesseract 会失败并提示安装，不会假成功。纯文字 PDF 不需要 OCR。
+> - 强制抽字重排：CLI `--no-pdf-redact` 或 GUI 取消「PDF原页遮罩」（仅数字原生；扫描页仍失败）
 > - AI 规则生成需设置环境变量 `MASKIT_LLM_API_KEY`
 
 **GUI 功能**：
@@ -185,7 +186,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1 -Variant nati
 - **预验证**：正式脱敏前预览哪些列会被脱敏、命中多少、改了什么样例；汇总自动处理 / 待复核 / 拒绝（不产出文件）
 - **复核清单**：打开 fingerprint JSONL，只显示遮盖预览，可加入白名单（不展示原文）
 - **图片脱敏（beta）**：勾选后 OCR 定位图片敏感区域并裁剪，中文/英文语言包首次自动下载
-- **PDF原样遮罩（beta）**：勾选后用 PyMuPDF 黑块保留版式（AGPL）；默认关闭走提取重排；写出后回扫文本层
+- **PDF原页遮罩（默认）**：PyMuPDF 按页黑块保留版式（**AGPL**）；扫描页另需本机 Tesseract。失败会出现在结果表，不会标成成功。`--no-pdf-redact` / 取消勾选则数字原生走提取重排
 - **AI 生成规则**：一句话描述 **或** 上传敏感信息规定文档（如 2026 年敏感信息规则，PDF/Word/邮件/文本）→ AI 解析并自动生成对应规则（只发规定/描述，脱敏数据永不出本地）
 
 **性能消耗**（普通办公电脑 4-8GB 内存可流畅运行）：
@@ -392,7 +393,7 @@ rules:
 
 ## 已知局限
 
-- **PDF 默认是近似保格式**：pypdf 提取文本 + reportlab 重排，会丢失原始排版（字体/表格/图片位置）。需要保版式证据时，用 **PDF 原样遮罩（beta）**（见下）。写出后会回扫可提取文本；注释/增量更新等层标为 `PARTIALLY_VERIFIED`，不宣称「整份 PDF 已证明无原文」。
+- **PDF 默认原页遮罩**：有 PyMuPDF 时按页处理——数字原生用文本几何打黑块，扫描页本机 OCR 后打黑块（不裁切页面、不贴伪名）。写出后回扫文本层；扫描页再做 OCR 回扫，命中原文则删除输出（FAIL CLOSED），报告只含 fingerprint。无 PyMuPDF 时数字原生回退 pypdf+reportlab 重排（丢版式）；扫描页不得写成空白成功件。`--no-pdf-redact` 强制重排（仅数字原生）。不宣称「整份 PDF 已证明无原文」。
 - **name/company 默认不扫文本**：匹配正则太宽，默认跳过防误伤；用 `--scan-names` 启用（语义前缀 + 词表 + 可选人员清单，纯本地）。表格值级姓名：推荐 `--person-list`；有清单时关闭姓氏启发式。
 - **未映射列不扫手机号**：值级白名单只有 email/IP/身份证/银行卡。备注列里的裸手机号默认不遮；要遮请把该列映射为 `phone`，或依赖正文里的「手机/电话」上下文。
 - **Excel 支持全部 sheet**：每个 sheet 独立按列脱敏，保留 sheet 结构。身份证等 18 位数字请在 Excel 里设为**文本**格式；存成数字会丢精度（约 15 位），工具只能尽量避免科学计数，不能还原末几位。
@@ -400,24 +401,31 @@ rules:
 - **邮件只支持 .eml/.msg**：Outlook 其它私有格式不在范围。
 - **图片脱敏是 beta**：`--image-crop` 启用，OCR 定位敏感文字区域并**裁剪掉**（图片变小）。需手动安装 tesseract + 中文语言包（`pip install -e ".[image]"` + 系统 tesseract）。
 
-## PDF 原样遮罩（beta，默认关闭）
+## PDF 原页遮罩（默认开启）
 
-在原 PDF 页上定位敏感文字并黑块遮罩（或 pseudo 填伪名），**保留版式/图片**。与默认的「提取重排」旧路径并存；未决定是否永久切换前，需显式启用。
+有 PyMuPDF 时默认在**原页**遮罩，按页分流：
+
+- **数字原生**（可提取足够文字）：用页面 span 几何定位 PII，黑块保留版式
+- **扫描页**（几乎无文本层）：本机 Tesseract OCR 词框映射后打黑块；**不**使用 png/jpg 那条水平裁带；扫描页不贴伪名
 
 ```bash
-pip install -e ".[pdf]"   # 安装 PyMuPDF（AGPL 许可）
+pip install -e ".[pdf]"     # PyMuPDF（AGPL 许可）
+pip install -e ".[image]"   # pytesseract；另需系统 tesseract 二进制
 
-# CLI
-maskit mask report.pdf --pdf-redact -o report_masked.pdf
-
-# 未传 --pdf-redact 时仍走提取重排旧路径
+# 默认：原页遮罩（有 PyMuPDF 时）
 maskit mask report.pdf -o report_masked.pdf
+
+# 数字原生强制抽字重排（扫描页仍会失败）
+maskit mask report.pdf --no-pdf-redact -o report_masked.pdf
+
+# 关闭扫描 OCR（纯文字 PDF 仍可处理）
+maskit mask report.pdf --no-pdf-ocr -o report_masked.pdf
 ```
 
-- **默认关闭**：不传 `--pdf-redact` / GUI 不勾选「PDF原样遮罩(beta)」→ 旧路径
 - **许可**：PyMuPDF 为 **AGPL**；商业分发前请自行确认合规
-- **数据安全**：全程本地，脱敏数据不出机器
-- **回扫失败则隔离输出**：文本层仍能抽出已检测原文时删除输出文件（FAIL CLOSED），报告只含 fingerprint
+- **扫描 OCR**：需本机 [Tesseract](https://github.com/tesseract-ocr/tesseract)；未安装时扫描 PDF 失败并提示安装，纯文字 PDF 不依赖 OCR。Windows exe **不捆绑** tesseract
+- **数据安全**：全程本地，脱敏 PDF 正文不出机器；语言包下载仅为 OCR 模型文件
+- **回扫失败则隔离输出**：文本层或扫描 OCR 仍能认出已检测原文时删除输出文件（FAIL CLOSED），错误与报告不含明文
 
 ## 版本历史
 
